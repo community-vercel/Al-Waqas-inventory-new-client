@@ -82,7 +82,7 @@ function AppContent() {
                     <Route path="/suppliers-and-customers" element={<SuppliersAndCustomers />} />
 
                   </Routes>
-                </div>
+                </div> 
               </div>
             </ProtectedRoute>
           } 
