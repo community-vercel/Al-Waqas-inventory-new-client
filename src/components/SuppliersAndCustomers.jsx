@@ -32,21 +32,27 @@ const SuppliersAndCustomers = () => {
     setCurrentPage(1);
   }, [searchTerm, activeTab]);
 
-  const fetchContacts = async () => {
-    try {
-      setLoading(true);
-      const response = await contactsAPI.getAll();
-      console.log('Contacts API response:', response);
-      // Ensure we have an array, even if response structure is different
-      const contactsData = response.data?.data || response.data || [];
-      setContacts(Array.isArray(contactsData) ? contactsData : []);
-    } catch (error) {
-      setError('Failed to load contacts');
-      console.error('Error fetching contacts:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+const fetchContacts = async () => {
+  try {
+    setLoading(true);
+    const response = await contactsAPI.getAll();
+    console.log('Contacts API response:', response);
+    
+    const contactsData = response.data?.data || response.data || [];
+    
+    // Filter out inactive contacts on the frontend
+    const activeContacts = Array.isArray(contactsData) 
+      ? contactsData.filter(contact => contact.isActive !== false)
+      : [];
+    
+    setContacts(activeContacts);
+  } catch (error) {
+    setError('Failed to load contacts');
+    console.error('Error fetching contacts:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSubmit = async () => {
     if (!newContact.name.trim()) {
