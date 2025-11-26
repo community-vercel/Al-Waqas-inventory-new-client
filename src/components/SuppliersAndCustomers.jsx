@@ -1,7 +1,7 @@
-// components/SuppliersAndCustomers.jsx - UPDATED TO USE BACKEND API
+// components/SuppliersAndCustomers.jsx - UPDATED WITH PAGINATION AND SEARCH
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, Search } from 'lucide-react';
-import { contactsAPI } from './../../services/api'; // Import the API
+import { Plus, Trash2, Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { contactsAPI } from './../../services/api';
 
 const SuppliersAndCustomers = () => {
   const [contacts, setContacts] = useState([]);
@@ -11,6 +11,8 @@ const SuppliersAndCustomers = () => {
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
 
   const [newContact, setNewContact] = useState({
     name: '',
@@ -23,6 +25,11 @@ const SuppliersAndCustomers = () => {
   useEffect(() => {
     fetchContacts();
   }, []);
+
+  // Reset to page 1 when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   const fetchContacts = async () => {
     try {
@@ -49,18 +56,16 @@ const SuppliersAndCustomers = () => {
       setError('');
 
       if (editingId) {
-        // Update existing contact
         await contactsAPI.update(editingId, newContact);
         setSuccess('Contact updated successfully!');
       } else {
-        // Create new contact
         await contactsAPI.create(newContact);
         setSuccess('Contact added successfully!');
       }
       
       setTimeout(() => setSuccess(''), 3000);
       resetForm();
-      fetchContacts(); // Refresh the list
+      fetchContacts();
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to save contact');
       console.error('Error saving contact:', error);
@@ -99,18 +104,37 @@ const SuppliersAndCustomers = () => {
       await contactsAPI.delete(id);
       setSuccess('Contact deleted successfully!');
       setTimeout(() => setSuccess(''), 3000);
-      fetchContacts(); // Refresh the list
+      fetchContacts();
     } catch (error) {
       setError('Failed to delete contact');
       console.error('Error deleting contact:', error);
     }
   };
 
+  // Filter contacts based on search term
   const filteredContacts = contacts.filter(c =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (c.phone && c.phone.includes(searchTerm)) ||
     (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentContacts = filteredContacts.slice(indexOfFirstItem, indexOfLastItem);
+
+  const goToPage = (pageNumber) => {
+    setCurrentPage(pageNumber);
+  };
+
+  const goToNextPage = () => {
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  };
+
+  const goToPrevPage = () => {
+    setCurrentPage(prev => Math.max(prev - 1, 1));
+  };
 
   if (loading) {
     return (
@@ -242,60 +266,107 @@ const SuppliersAndCustomers = () => {
           </h3>
         </div>
 
-        {filteredContacts.length === 0 ? (
+        {currentContacts.length === 0 ? (
           <div className="text-center py-20 text-gray-500">
             {contacts.length === 0 ? 'No contacts found. Add your first contact above.' : 'No contacts match your search.'}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredContacts.map((contact) => (
-                  <tr key={contact._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium text-gray-900">{contact.name}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        contact.type === 'customer' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {contact.type === 'customer' ? 'Customer' : 'Supplier'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{contact.email || '—'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{contact.address || '—'}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => editContact(contact)} 
-                          className="text-blue-600 hover:text-blue-800 p-2 rounded hover:bg-blue-50"
-                        >
-                          <Edit size={18} />
-                        </button>
-                        <button 
-                          onClick={() => deleteContact(contact._id)} 
-                          className="text-red-600 hover:text-red-800 p-2 rounded hover:bg-red-50"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {currentContacts.map((contact) => (
+                    <tr key={contact._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 font-medium text-gray-900">{contact.name}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          contact.type === 'customer' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {contact.type === 'customer' ? 'Customer' : 'Supplier'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{contact.email || '—'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{contact.address || '—'}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => editContact(contact)} 
+                            className="text-blue-600 hover:text-blue-800 p-2 rounded hover:bg-blue-50"
+                          >
+                            <Edit size={18} />
+                          </button>
+                          <button 
+                            onClick={() => deleteContact(contact._id)} 
+                            className="text-red-600 hover:text-red-800 p-2 rounded hover:bg-red-50"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredContacts.length)} of {filteredContacts.length} contacts
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={goToPrevPage}
+                    disabled={currentPage === 1}
+                    className="px-3 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    <ChevronLeft size={16} />
+                    Previous
+                  </button>
+                  
+                  {/* Page Numbers */}
+                  <div className="flex gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                      <button
+                        key={page}
+                        onClick={() => goToPage(page)}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium ${
+                          currentPage === page
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white border text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={goToNextPage}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    Next
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
