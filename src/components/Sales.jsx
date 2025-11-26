@@ -1,7 +1,7 @@
-// components/Sales.jsx - WITH CUSTOMER DROPDOWN FEATURE
+// components/Sales.jsx - FIXED: Only show products with available inventory
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Edit, Download, ChevronLeft, ChevronRight, AlertCircle, MessageCircle, UserPlus } from 'lucide-react';
+import { Plus, Trash2, Edit, Download, ChevronLeft, ChevronRight, AlertCircle, MessageCircle, UserPlus, Search, X,Calendar } from 'lucide-react';
 import { salesAPI, productsAPI, colorsAPI, inventoryAPI, contactsAPI } from './../../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -28,6 +28,10 @@ const Sales = () => {
     phone: '',
     address: ''
   });
+
+  // New state for product search
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
 
   const [filters, setFilters] = useState({
     startDate: '',
@@ -136,13 +140,29 @@ const Sales = () => {
       setSuccess('Customer added successfully!');
       setNewCustomer({ name: '', phone: '', address: '' });
       setShowNewCustomerForm(false);
-      fetchCustomers(); // Refresh customers list
+      fetchCustomers();
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to create customer');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Get products that have available stock in inventory
+  const getAvailableProducts = () => {
+    const productsWithStock = new Set();
+    
+    inventory.forEach(item => {
+      if (item.quantity > 0) {
+        const productId = String(item.product._id || item.product);
+        productsWithStock.add(productId);
+      }
+    });
+
+    return products.filter(product => 
+      productsWithStock.has(String(product._id))
+    );
   };
 
   // Get available stock for selected product + color
@@ -157,25 +177,86 @@ const Sales = () => {
     return item ? item.quantity : 0;
   };
 
-  const availableStock = getAvailableStock();
+  // Get available colors for selected product (only colors that have stock)
+  const getAvailableColorsForProduct = (productId) => {
+    if (!productId) return [];
 
+    const productInventory = inventory.filter(item =>
+      String(item.product._id || item.product) === productId && item.quantity > 0
+    );
+
+    const availableColorIds = new Set();
+    const availableColors = [];
+
+    productInventory.forEach(item => {
+      const colorId = String(item.color._id || item.color);
+      if (!availableColorIds.has(colorId)) {
+        availableColorIds.add(colorId);
+        const colorDetail = colors.find(c => String(c._id) === colorId);
+        if (colorDetail) {
+          availableColors.push(colorDetail);
+        }
+      }
+    });
+
+    return availableColors;
+  };
+
+  // Get stock for specific product-color combination
+  const getStockForProductColor = (productId, colorId) => {
+    const item = inventory.find(i =>
+      String(i.product._id || i.product) === productId &&
+      String(i.color._id || i.color) === colorId
+    );
+    return item ? item.quantity : 0;
+  };
+
+  const availableStock = getAvailableStock();
+  const availableProducts = getAvailableProducts();
+
+  // AUTO FILL SALE PRICE FROM PRODUCT
   useEffect(() => {
     if (newSale.product) {
       const selectedProduct = products.find(p => p._id === newSale.product);
-      if (selectedProduct && selectedProduct.colors?.length > 0) {
-        setFilteredColors(selectedProduct.colors);
-      } else {
-        setFilteredColors(colors);
-      }
-      setNewSale(prev => ({ ...prev, color: '', unitPrice: '' }));
-      const product = products.find(p => p._id === newSale.product);
-      if (product) {
-        setNewSale(prev => ({ ...prev, unitPrice: product.salePrice?.toString() || '' }));
+      
+      if (selectedProduct) {
+        setNewSale(prev => ({ 
+          ...prev, 
+          unitPrice: selectedProduct.salePrice?.toString() || '',
+          color: ''
+        }));
+
+        const availableColors = getAvailableColorsForProduct(newSale.product);
+        setFilteredColors(availableColors);
       }
     } else {
       setFilteredColors([]);
+      setNewSale(prev => ({ ...prev, unitPrice: '', color: '' }));
     }
-  }, [newSale.product, products, colors]);
+  }, [newSale.product, products, inventory]);
+
+  // Filter available products based on search term
+  const filteredProducts = availableProducts.filter(product =>
+    product.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
+    (product.type && product.type.toLowerCase().includes(productSearchTerm.toLowerCase()))
+  );
+
+  const handleProductSelect = (productId) => {
+    setNewSale(prev => ({ ...prev, product: productId }));
+    setProductSearchTerm('');
+    setIsProductDropdownOpen(false);
+  };
+
+  const handleProductSearchChange = (e) => {
+    setProductSearchTerm(e.target.value);
+    setIsProductDropdownOpen(true);
+  };
+
+  const clearProductSearch = () => {
+    setProductSearchTerm('');
+    setNewSale(prev => ({ ...prev, product: '' }));
+    setIsProductDropdownOpen(false);
+  };
 
   const handleSubmit = async () => {
     if (!newSale.customerName.trim() || !newSale.product || !newSale.color || !newSale.quantity || !newSale.unitPrice) {
@@ -218,16 +299,7 @@ const Sales = () => {
         setSuccess('Sale completed successfully!');
       }
 
-      setNewSale({
-        date: new Date().toISOString().split('T')[0],
-        customerName: '',
-        product: '',
-        color: '',
-        quantity: '',
-        unitPrice: '',
-        discount: '0'
-      });
-
+      resetForm();
       setTimeout(() => setSuccess(''), 3000);
       fetchAllSales();
       fetchFilteredSales();
@@ -239,8 +311,24 @@ const Sales = () => {
     }
   };
 
+  const resetForm = () => {
+    setNewSale({
+      date: new Date().toISOString().split('T')[0],
+      customerName: '',
+      product: '',
+      color: '',
+      quantity: '',
+      unitPrice: '',
+      discount: '0'
+    });
+    setProductSearchTerm('');
+    setIsProductDropdownOpen(false);
+    setEditingSale(null);
+  };
+
   const editSale = (sale) => {
     setEditingSale(sale);
+    const selectedProduct = products.find(p => p._id === sale.product._id);
     setNewSale({
       date: new Date(sale.date).toISOString().split('T')[0],
       customerName: sale.customerName,
@@ -250,6 +338,8 @@ const Sales = () => {
       unitPrice: sale.unitPrice.toString(),
       discount: sale.discount.toString()
     });
+    setProductSearchTerm(selectedProduct ? selectedProduct.name : '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const deleteSale = async (id) => {
@@ -279,7 +369,6 @@ const Sales = () => {
       return;
     }
 
-    // Validate phone number (basic validation)
     const cleanNumber = whatsappNumber.replace(/\D/g, '');
     if (cleanNumber.length < 10) {
       setError('Please enter a valid WhatsApp number');
@@ -312,13 +401,11 @@ Visit Again!
   };
 
   const applyFilters = () => {
-    setCurrentPage(1);
     setSearchParams({ page: '1' });
   };
 
   const clearFilters = () => {
     setFilters({ startDate: '', endDate: '', customerName: '', product: '' });
-    setCurrentPage(1);
     setSearchParams({});
   };
 
@@ -467,6 +554,48 @@ Visit Again!
         </div>
       </div>
 
+      {/* Date Filter */}
+      <div className="bg-white rounded-lg shadow p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-6 flex items-center gap-3">
+          <Calendar size={24} />
+          Filter by Date Range
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={e => setFilters({ ...filters, startDate: e.target.value })}
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">To Date</label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={e => setFilters({ ...filters, endDate: e.target.value })}
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex items-end gap-3">
+            <button
+              onClick={applyFilters}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
+            >
+              Apply Filter
+            </button>
+            <button
+              onClick={clearFilters}
+              className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Add/Edit Sale Form */}
       <div className="bg-white rounded-lg shadow p-6 mb-8">
         <h2 className="text-xl font-semibold mb-6">{editingSale ? 'Edit Sale' : 'Process New Sale'}</h2>
@@ -556,19 +685,187 @@ Visit Again!
 
         {/* Product Selection */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-          <input type="date" value={newSale.date} onChange={e => setNewSale({ ...newSale, date: e.target.value })} className="px-4 py-3 border rounded-lg" />
-          <select value={newSale.product} onChange={e => setNewSale({ ...newSale, product: e.target.value, color: '', unitPrice: products.find(p => p._id === e.target.value)?.salePrice || '' })} className="px-4 py-3 border rounded-lg">
-            <option value="">Select Product</option>
-            {products.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-          </select>
-          <select value={newSale.color} onChange={e => setNewSale({ ...newSale, color: e.target.value })} className="px-4 py-3 border rounded-lg" disabled={!newSale.product}>
+          <input 
+            type="date" 
+            value={newSale.date} 
+            onChange={e => setNewSale({ ...newSale, date: e.target.value })} 
+            className="px-4 py-3 border rounded-lg" 
+          />
+          
+          {/* Product Search Dropdown */}
+          <div className="relative">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="text"
+                placeholder="Search available products..."
+                value={productSearchTerm}
+                onChange={handleProductSearchChange}
+                onFocus={() => setIsProductDropdownOpen(true)}
+                className="w-full pl-10 pr-10 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              {productSearchTerm && (
+                <button
+                  onClick={clearProductSearch}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            
+            {/* Selected Product Display */}
+            {newSale.product && !isProductDropdownOpen && (
+              <div className="mt-1 p-2 bg-blue-50 rounded border border-blue-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-blue-800">
+                    {products.find(p => p._id === newSale.product)?.name}
+                  </span>
+                  <button
+                    onClick={clearProductSearch}
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <select 
+            value={newSale.color} 
+            onChange={e => setNewSale({ ...newSale, color: e.target.value })} 
+            className="px-4 py-3 border rounded-lg" 
+            disabled={!newSale.product}
+          >
             <option value="">Select Color</option>
-            {filteredColors.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+            {filteredColors.map(c => (
+              <option key={c._id} value={c._id}>
+                {c.name} ({getStockForProductColor(newSale.product, c._id)} available)
+              </option>
+            ))}
           </select>
-          <input type="number" placeholder="Qty" min="1" value={newSale.quantity} onChange={e => setNewSale({ ...newSale, quantity: e.target.value })} className="px-4 py-3 border rounded-lg" />
-          <input type="number" placeholder="Price" step="0.01" value={newSale.unitPrice} onChange={e => setNewSale({ ...newSale, unitPrice: e.target.value })} className="px-4 py-3 border rounded-lg" />
-          <input type="number" placeholder="Discount %" min="0" max="100" value={newSale.discount} onChange={e => setNewSale({ ...newSale, discount: e.target.value })} className="px-4 py-3 border rounded-lg" />
+          
+          <input 
+            type="number" 
+            placeholder="Qty" 
+            min="1" 
+            value={newSale.quantity} 
+            onChange={e => setNewSale({ ...newSale, quantity: e.target.value })} 
+            className="px-4 py-3 border rounded-lg" 
+          />
+          
+          <input 
+            type="number" 
+            placeholder="Price" 
+            step="0.01" 
+            value={newSale.unitPrice} 
+            onChange={e => setNewSale({ ...newSale, unitPrice: e.target.value })} 
+            className="px-4 py-3 border rounded-lg" 
+          />
+          
+          <input 
+            type="number" 
+            placeholder="Discount %" 
+            min="0" 
+            max="100" 
+            value={newSale.discount} 
+            onChange={e => setNewSale({ ...newSale, discount: e.target.value })} 
+            className="px-4 py-3 border rounded-lg" 
+          />
         </div>
+
+        {/* Horizontal Product Search Results */}
+        {isProductDropdownOpen && filteredProducts.length > 0 && (
+          <div className="mt-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-medium text-gray-700">
+                Available Products ({filteredProducts.length} in stock)
+              </h3>
+              <button
+                onClick={() => setIsProductDropdownOpen(false)}
+                className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+              >
+                <X size={14} /> Close
+              </button>
+            </div>
+            <div className="overflow-x-auto pb-4">
+              <div className="flex gap-3" style={{ minWidth: 'max-content' }}>
+                {filteredProducts.map(product => {
+                  const availableColors = getAvailableColorsForProduct(product._id);
+                  const totalStock = inventory
+                    .filter(item => String(item.product._id || item.product) === product._id)
+                    .reduce((sum, item) => sum + item.quantity, 0);
+
+                  return (
+                    <button
+                      key={product._id}
+                      onClick={() => handleProductSelect(product._id)}
+                      className="flex-shrink-0 w-64 bg-white border border-gray-200 rounded-lg p-4 hover:border-green-500 hover:shadow-md transition-all duration-200 text-left"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-900 text-sm truncate">
+                            {product.name}
+                          </h4>
+                          <p className="text-xs text-gray-500 uppercase mt-1">
+                            {product.type}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">
+                            Rs. {product.salePrice?.toLocaleString() || '0'}
+                          </div>
+                          <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                            Stock: {totalStock}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {availableColors.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs text-gray-600 mb-1">Available Colors:</p>
+                          <div className="flex gap-1 flex-wrap">
+                            {availableColors.slice(0, 3).map(color => (
+                              <div
+                                key={color._id}
+                                className="w-4 h-4 rounded-full border border-gray-300"
+                                style={{ backgroundColor: color.hexCode }}
+                                title={`${color.name} (${getStockForProductColor(product._id, color._id)} available)`}
+                              />
+                            ))}
+                            {availableColors.length > 3 && (
+                              <span className="text-xs text-gray-500">
+                                +{availableColors.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="mt-3 pt-2 border-t border-gray-100">
+                        <span className="text-xs text-green-600 font-medium">
+                          Click to select
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isProductDropdownOpen && filteredProducts.length === 0 && productSearchTerm && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-gray-500 text-center">
+              No available products found for "<span className="font-medium">{productSearchTerm}</span>"
+            </p>
+            <p className="text-xs text-gray-400 text-center mt-1">
+              Purchase this product first to make it available for sales
+            </p>
+          </div>
+        )}
 
         {/* Stock Status */}
         {newSale.product && newSale.color && (
@@ -587,6 +884,20 @@ Visit Again!
           </div>
         )}
 
+        {newSale.quantity && newSale.unitPrice && (
+          <div className="mt-4 p-4 bg-green-50 rounded-lg">
+            <p className="font-medium text-green-800">
+              Subtotal: Rs. {(parseInt(newSale.quantity) * parseFloat(newSale.unitPrice)).toLocaleString()}
+              {parseFloat(newSale.discount) > 0 && (
+                <span className="ml-2">
+                  | Discount: {newSale.discount}% | 
+                  Total: Rs. {((parseInt(newSale.quantity) * parseFloat(newSale.unitPrice)) * (1 - parseFloat(newSale.discount) / 100)).toLocaleString()}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+
         <div className="mt-6 flex gap-3">
           <button
             onClick={handleSubmit}
@@ -596,14 +907,13 @@ Visit Again!
             {submitting ? 'Processing...' : (editingSale ? 'Update' : 'Process')} Sale
           </button>
           {editingSale && (
-            <button onClick={() => setEditingSale(null)} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+            <button onClick={resetForm} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
               Cancel
             </button>
           )}
         </div>
       </div>
 
-      {/* Rest of the component remains exactly the same */}
       {/* Sales Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b flex justify-between items-center">

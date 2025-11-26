@@ -1,7 +1,7 @@
-// components/Purchases.jsx - FINAL 100% COMPLETE
+// components/Purchases.jsx - WITH HORIZONTAL PRODUCT SEARCH CARDS
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Edit, Download, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { Plus, Trash2, Edit, Download, ChevronLeft, ChevronRight, Calendar, Search, X } from 'lucide-react';
 import { purchasesAPI, productsAPI, colorsAPI, contactsAPI } from './../../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -18,6 +18,10 @@ const Purchases = () => {
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [editingPurchase, setEditingPurchase] = useState(null);
+
+  // New state for product search
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
 
   const [filters, setFilters] = useState({
     startDate: '',
@@ -83,30 +87,29 @@ const Purchases = () => {
     }
   };
 
- const fetchSuppliers = async () => {
-  try {
-    console.log('Fetching suppliers...');
-    const response = await contactsAPI.getByType('supplier');
-    console.log('Suppliers API response:', response);
-    console.log('Suppliers data:', response.data);
-    
-    // Make sure we're accessing the data correctly
-    if (response.data && response.data.data) {
-      setSuppliers(response.data.data);
-      console.log('Suppliers set:', response.data.data);
-    } else if (response.data) {
-      // If the structure is different
-      setSuppliers(response.data);
-    } else {
-      console.error('Unexpected response structure:', response);
+  const fetchSuppliers = async () => {
+    try {
+      console.log('Fetching suppliers...');
+      const response = await contactsAPI.getByType('supplier');
+      console.log('Suppliers API response:', response);
+      console.log('Suppliers data:', response.data);
+      
+      if (response.data && response.data.data) {
+        setSuppliers(response.data.data);
+        console.log('Suppliers set:', response.data.data);
+      } else if (response.data) {
+        setSuppliers(response.data);
+      } else {
+        console.error('Unexpected response structure:', response);
+        setSuppliers([]);
+      }
+    } catch (error) {
+      console.error('Error fetching suppliers:', error);
+      console.error('Error response:', error.response);
       setSuppliers([]);
     }
-  } catch (error) {
-    console.error('Error fetching suppliers:', error);
-    console.error('Error response:', error.response);
-    setSuppliers([]);
-  }
-};
+  };
+
   useEffect(() => {
     fetchProducts();
     fetchColors();
@@ -136,6 +139,29 @@ const Purchases = () => {
       setNewPurchase(prev => ({ ...prev, unitPrice: '', color: '' }));
     }
   }, [newPurchase.product, products]);
+
+  // Filter products based on search term
+  const filteredProducts = products.filter(product =>
+    product.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
+    (product.type && product.type.toLowerCase().includes(productSearchTerm.toLowerCase()))
+  );
+
+  const handleProductSelect = (productId) => {
+    setNewPurchase(prev => ({ ...prev, product: productId }));
+    setProductSearchTerm('');
+    setIsProductDropdownOpen(false);
+  };
+
+  const handleProductSearchChange = (e) => {
+    setProductSearchTerm(e.target.value);
+    setIsProductDropdownOpen(true);
+  };
+
+  const clearProductSearch = () => {
+    setProductSearchTerm('');
+    setNewPurchase(prev => ({ ...prev, product: '' }));
+    setIsProductDropdownOpen(false);
+  };
 
   const handleSubmit = async () => {
     if (!newPurchase.product || !newPurchase.supplier || !newPurchase.quantity || !newPurchase.unitPrice) {
@@ -189,11 +215,14 @@ const Purchases = () => {
       quantity: '',
       unitPrice: ''
     });
+    setProductSearchTerm('');
+    setIsProductDropdownOpen(false);
     setEditingPurchase(null);
   };
 
   const editPurchase = (purchase) => {
     setEditingPurchase(purchase);
+    const selectedProduct = products.find(p => p._id === purchase.product._id);
     setNewPurchase({
       date: new Date(purchase.date).toISOString().split('T')[0],
       product: purchase.product._id,
@@ -202,6 +231,7 @@ const Purchases = () => {
       quantity: purchase.quantity.toString(),
       unitPrice: purchase.unitPrice.toString()
     });
+    setProductSearchTerm(selectedProduct ? selectedProduct.name : '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -372,15 +402,53 @@ const Purchases = () => {
       <div className="bg-white rounded-lg shadow p-6 mb-8">
         <h2 className="text-xl font-semibold mb-6">{editingPurchase ? 'Edit Purchase' : 'Add New Purchase'}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-          <input type="date" value={newPurchase.date} onChange={e => setNewPurchase({ ...newPurchase, date: e.target.value })} className="px-4 py-3 border rounded-lg" />
-          <select 
-            value={newPurchase.product} 
-            onChange={e => setNewPurchase({ ...newPurchase, product: e.target.value })}
-            className="px-4 py-3 border rounded-lg"
-          >
-            <option value="">Select Product</option>
-            {products.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-          </select>
+          <input 
+            type="date" 
+            value={newPurchase.date} 
+            onChange={e => setNewPurchase({ ...newPurchase, date: e.target.value })} 
+            className="px-4 py-3 border rounded-lg" 
+          />
+          
+          {/* Product Search Dropdown */}
+          <div className="relative">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="text"
+                placeholder="Search product..."
+                value={productSearchTerm}
+                onChange={handleProductSearchChange}
+                onFocus={() => setIsProductDropdownOpen(true)}
+                className="w-full pl-10 pr-10 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              {productSearchTerm && (
+                <button
+                  onClick={clearProductSearch}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            
+            {/* Selected Product Display */}
+            {newPurchase.product && !isProductDropdownOpen && (
+              <div className="mt-1 p-2 bg-blue-50 rounded border border-blue-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-blue-800">
+                    {products.find(p => p._id === newPurchase.product)?.name}
+                  </span>
+                  <button
+                    onClick={clearProductSearch}
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <select 
             value={newPurchase.color} 
             onChange={e => setNewPurchase({ ...newPurchase, color: e.target.value })} 
@@ -390,6 +458,7 @@ const Purchases = () => {
             <option value="">No Color</option>
             {filteredColors.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
           </select>
+          
           <select 
             value={newPurchase.supplier} 
             onChange={e => setNewPurchase({ ...newPurchase, supplier: e.target.value })}
@@ -402,7 +471,16 @@ const Purchases = () => {
               </option>
             ))}
           </select>
-          <input type="number" placeholder="Qty" min="1" value={newPurchase.quantity} onChange={e => setNewPurchase({ ...newPurchase, quantity: e.target.value })} className="px-4 py-3 border rounded-lg" />
+          
+          <input 
+            type="number" 
+            placeholder="Qty" 
+            min="1" 
+            value={newPurchase.quantity} 
+            onChange={e => setNewPurchase({ ...newPurchase, quantity: e.target.value })} 
+            className="px-4 py-3 border rounded-lg" 
+          />
+          
           <input 
             type="number" 
             placeholder="Price" 
@@ -413,6 +491,83 @@ const Purchases = () => {
             readOnly={!!newPurchase.product}
           />
         </div>
+
+        {/* Horizontal Product Search Results */}
+        {isProductDropdownOpen && filteredProducts.length > 0 && (
+          <div className="mt-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-medium text-gray-700">
+                Search Results ({filteredProducts.length} products)
+              </h3>
+              <button
+                onClick={() => setIsProductDropdownOpen(false)}
+                className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+              >
+                <X size={14} /> Close
+              </button>
+            </div>
+            <div className="overflow-x-auto pb-4">
+              <div className="flex gap-3" style={{ minWidth: 'max-content' }}>
+                {filteredProducts.map(product => (
+                  <button
+                    key={product._id}
+                    onClick={() => handleProductSelect(product._id)}
+                    className="flex-shrink-0 w-64 bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-500 hover:shadow-md transition-all duration-200 text-left"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900 text-sm truncate">
+                          {product.name}
+                        </h4>
+                        <p className="text-xs text-gray-500 uppercase mt-1">
+                          {product.type}
+                        </p>
+                      </div>
+                      <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold ml-2">
+                        Rs. {product.purchasePrice?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    
+                    {product.colors && product.colors.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs text-gray-600 mb-1">Available Colors:</p>
+                        <div className="flex gap-1 flex-wrap">
+                          {product.colors.slice(0, 3).map(color => (
+                            <div
+                              key={color._id}
+                              className="w-4 h-4 rounded-full border border-gray-300"
+                              style={{ backgroundColor: color.hexCode }}
+                              title={color.name}
+                            />
+                          ))}
+                          {product.colors.length > 3 && (
+                            <span className="text-xs text-gray-500">
+                              +{product.colors.length - 3} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="mt-3 pt-2 border-t border-gray-100">
+                      <span className="text-xs text-green-600 font-medium">
+                        Click to select
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isProductDropdownOpen && filteredProducts.length === 0 && productSearchTerm && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-gray-500 text-center">
+              No products found for "<span className="font-medium">{productSearchTerm}</span>"
+            </p>
+          </div>
+        )}
 
         {newPurchase.quantity && newPurchase.unitPrice && (
           <div className="mt-4 p-4 bg-blue-50 rounded-lg">
