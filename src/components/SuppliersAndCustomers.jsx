@@ -1,4 +1,4 @@
-// components/SuppliersAndCustomers.jsx - UPDATED WITH PAGINATION AND SEARCH
+// components/SuppliersAndCustomers.jsx - FIXED PAGINATION AND REAL-TIME UPDATES
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { contactsAPI } from './../../services/api';
@@ -36,7 +36,9 @@ const SuppliersAndCustomers = () => {
       setLoading(true);
       const response = await contactsAPI.getAll();
       console.log('Contacts API response:', response);
-      setContacts(response.data.data || []);
+      // Ensure we have an array, even if response structure is different
+      const contactsData = response.data?.data || response.data || [];
+      setContacts(Array.isArray(contactsData) ? contactsData : []);
     } catch (error) {
       setError('Failed to load contacts');
       console.error('Error fetching contacts:', error);
@@ -55,17 +57,39 @@ const SuppliersAndCustomers = () => {
       setSubmitting(true);
       setError('');
 
+      let response;
       if (editingId) {
-        await contactsAPI.update(editingId, newContact);
+        response = await contactsAPI.update(editingId, newContact);
         setSuccess('Contact updated successfully!');
       } else {
-        await contactsAPI.create(newContact);
+        response = await contactsAPI.create(newContact);
         setSuccess('Contact added successfully!');
       }
       
+      // Immediately update the contacts list with the new/updated contact
+      if (response.data && response.data.data) {
+        const updatedContact = response.data.data;
+        
+        if (editingId) {
+          // Update existing contact in the list
+          setContacts(prevContacts => 
+            prevContacts.map(contact => 
+              contact._id === editingId ? updatedContact : contact
+            )
+          );
+        } else {
+          // Add new contact to the beginning of the list
+          setContacts(prevContacts => [updatedContact, ...prevContacts]);
+          // Reset to page 1 to show the newly added contact
+          setCurrentPage(1);
+        }
+      } else {
+        // Fallback: refetch all contacts
+        fetchContacts();
+      }
+
       setTimeout(() => setSuccess(''), 3000);
       resetForm();
-      fetchContacts();
     } catch (error) {
       setError(error.response?.data?.message || 'Failed to save contact');
       console.error('Error saving contact:', error);
@@ -102,9 +126,23 @@ const SuppliersAndCustomers = () => {
     
     try {
       await contactsAPI.delete(id);
+      // Remove contact from local state immediately
+      setContacts(prevContacts => prevContacts.filter(contact => contact._id !== id));
       setSuccess('Contact deleted successfully!');
       setTimeout(() => setSuccess(''), 3000);
-      fetchContacts();
+      
+      // Adjust current page if needed after deletion
+      const remainingContacts = contacts.filter(contact => contact._id !== id);
+      const filteredRemaining = remainingContacts.filter(c =>
+        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (c.phone && c.phone.includes(searchTerm)) ||
+        (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+      const newTotalPages = Math.ceil(filteredRemaining.length / itemsPerPage);
+      
+      if (currentPage > newTotalPages && newTotalPages > 0) {
+        setCurrentPage(newTotalPages);
+      }
     } catch (error) {
       setError('Failed to delete contact');
       console.error('Error deleting contact:', error);
@@ -129,11 +167,36 @@ const SuppliersAndCustomers = () => {
   };
 
   const goToNextPage = () => {
-    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
   };
 
   const goToPrevPage = () => {
-    setCurrentPage(prev => Math.max(prev - 1, 1));
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  // Generate page numbers with limits to avoid too many buttons
+  const getPageNumbers = () => {
+    const pageNumbers = [];
+    const maxVisiblePages = 5;
+    
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      const startPage = Math.max(1, currentPage - 2);
+      const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+      }
+    }
+    
+    return pageNumbers;
   };
 
   if (loading) {
@@ -178,7 +241,7 @@ const SuppliersAndCustomers = () => {
               type="text"
               value={newContact.name}
               onChange={e => setNewContact({ ...newContact, name: e.target.value })}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="Enter name"
             />
           </div>
@@ -187,7 +250,7 @@ const SuppliersAndCustomers = () => {
             <select
               value={newContact.type}
               onChange={e => setNewContact({ ...newContact, type: e.target.value })}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="customer">Customer</option>
               <option value="supplier">Supplier</option>
@@ -199,7 +262,7 @@ const SuppliersAndCustomers = () => {
               type="text"
               value={newContact.phone}
               onChange={e => setNewContact({ ...newContact, phone: e.target.value })}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="0300-1234567"
             />
           </div>
@@ -209,7 +272,7 @@ const SuppliersAndCustomers = () => {
               type="email"
               value={newContact.email}
               onChange={e => setNewContact({ ...newContact, email: e.target.value })}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="contact@example.com"
             />
           </div>
@@ -219,7 +282,7 @@ const SuppliersAndCustomers = () => {
               type="text"
               value={newContact.address}
               onChange={e => setNewContact({ ...newContact, address: e.target.value })}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="Full address"
             />
           </div>
@@ -229,14 +292,15 @@ const SuppliersAndCustomers = () => {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
           >
+            <Plus size={20} />
             {submitting ? 'Saving...' : (editingId ? 'Update' : 'Add')} Contact
           </button>
           {editingId && (
             <button 
               onClick={resetForm} 
-              className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium"
+              className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
             >
               Cancel
             </button>
@@ -253,7 +317,7 @@ const SuppliersAndCustomers = () => {
             placeholder="Search by name, phone, or email..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
       </div>
@@ -262,7 +326,7 @@ const SuppliersAndCustomers = () => {
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b">
           <h3 className="text-lg font-semibold text-gray-900">
-            All Contacts ({filteredContacts.length})
+            All Contacts ({filteredContacts.length}) {totalPages > 1 && `- Page ${currentPage} of ${totalPages}`}
           </h3>
         </div>
 
@@ -276,17 +340,17 @@ const SuppliersAndCustomers = () => {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {currentContacts.map((contact) => (
-                    <tr key={contact._id} className="hover:bg-gray-50">
+                    <tr key={contact._id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 font-medium text-gray-900">{contact.name}</td>
                       <td className="px-6 py-4">
                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -299,18 +363,20 @@ const SuppliersAndCustomers = () => {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{contact.email || '—'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{contact.address || '—'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">{contact.address || '—'}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <button 
                             onClick={() => editContact(contact)} 
-                            className="text-blue-600 hover:text-blue-800 p-2 rounded hover:bg-blue-50"
+                            className="text-blue-600 hover:text-blue-800 p-2 rounded hover:bg-blue-50 transition-colors"
+                            title="Edit contact"
                           >
                             <Edit size={18} />
                           </button>
                           <button 
                             onClick={() => deleteContact(contact._id)} 
-                            className="text-red-600 hover:text-red-800 p-2 rounded hover:bg-red-50"
+                            className="text-red-600 hover:text-red-800 p-2 rounded hover:bg-red-50 transition-colors"
+                            title="Delete contact"
                           >
                             <Trash2 size={18} />
                           </button>
@@ -332,7 +398,7 @@ const SuppliersAndCustomers = () => {
                   <button
                     onClick={goToPrevPage}
                     disabled={currentPage === 1}
-                    className="px-3 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                   >
                     <ChevronLeft size={16} />
                     Previous
@@ -340,14 +406,14 @@ const SuppliersAndCustomers = () => {
                   
                   {/* Page Numbers */}
                   <div className="flex gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    {getPageNumbers().map(page => (
                       <button
                         key={page}
                         onClick={() => goToPage(page)}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium ${
+                        className={`px-3 py-2 rounded-lg text-sm font-medium min-w-[40px] transition-colors ${
                           currentPage === page
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white border text-gray-700 hover:bg-gray-100'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                         }`}
                       >
                         {page}
@@ -358,7 +424,7 @@ const SuppliersAndCustomers = () => {
                   <button
                     onClick={goToNextPage}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                   >
                     Next
                     <ChevronRight size={16} />
