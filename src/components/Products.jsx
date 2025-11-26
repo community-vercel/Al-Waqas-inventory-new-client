@@ -36,7 +36,8 @@ const Products = () => {
     { value: 'gallon', label: 'Gallon' },
     { value: 'dibbi', label: 'Dibbi' },
     { value: 'quarter', label: 'Quarter' },
-    { value: 'p', label: 'P' }
+    { value: 'p', label: 'P' },
+    { value: 'other', label: 'Other' } 
   ];
 
   useEffect(() => {
@@ -183,7 +184,7 @@ const Products = () => {
   };
 
   const downloadTemplate = () => {
-    const csv = "name,type,purchasePrice,salePrice,discount,colors\nNippon Enamel,gallon,2500,3200,5,White,Black,Red\nBerger Silk,dibbi,900,1200,0,Blue,Green";
+    const csv = "name,type,purchasePrice,salePrice,discount,colors\nNippon Enamel,gallon,2500,3200,5,White,Black,Red\nBerger Silk,dibbi,900,1200,0,Blue,Green\nSpecial Product,other,1500,2000,10,Yellow,Orange"; 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
