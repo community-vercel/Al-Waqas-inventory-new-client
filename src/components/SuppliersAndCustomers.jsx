@@ -1,4 +1,4 @@
-// components/SuppliersAndCustomers.jsx - FIXED PAGINATION AND REAL-TIME UPDATES
+// components/SuppliersAndCustomers.jsx - WITH TABS
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { contactsAPI } from './../../services/api';
@@ -13,6 +13,7 @@ const SuppliersAndCustomers = () => {
   const [submitting, setSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [activeTab, setActiveTab] = useState('customer'); // 'customer' or 'supplier'
 
   const [newContact, setNewContact] = useState({
     name: '',
@@ -26,10 +27,10 @@ const SuppliersAndCustomers = () => {
     fetchContacts();
   }, []);
 
-  // Reset to page 1 when search term changes
+  // Reset to page 1 when search term changes or tab changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, activeTab]);
 
   const fetchContacts = async () => {
     try {
@@ -101,7 +102,7 @@ const SuppliersAndCustomers = () => {
   const resetForm = () => {
     setNewContact({ 
       name: '', 
-      type: 'customer', 
+      type: activeTab, // Set default type to active tab
       phone: '', 
       address: '', 
       email: '' 
@@ -118,6 +119,8 @@ const SuppliersAndCustomers = () => {
       email: contact.email || ''
     });
     setEditingId(contact._id);
+    // Switch to the appropriate tab when editing
+    setActiveTab(contact.type);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -133,11 +136,7 @@ const SuppliersAndCustomers = () => {
       
       // Adjust current page if needed after deletion
       const remainingContacts = contacts.filter(contact => contact._id !== id);
-      const filteredRemaining = remainingContacts.filter(c =>
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (c.phone && c.phone.includes(searchTerm)) ||
-        (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
+      const filteredRemaining = getFilteredContacts(remainingContacts);
       const newTotalPages = Math.ceil(filteredRemaining.length / itemsPerPage);
       
       if (currentPage > newTotalPages && newTotalPages > 0) {
@@ -149,12 +148,18 @@ const SuppliersAndCustomers = () => {
     }
   };
 
-  // Filter contacts based on search term
-  const filteredContacts = contacts.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.phone && c.phone.includes(searchTerm)) ||
-    (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filter contacts based on active tab and search term
+  const getFilteredContacts = (contactList = contacts) => {
+    return contactList.filter(c =>
+      c.type === activeTab && (
+        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (c.phone && c.phone.includes(searchTerm)) ||
+        (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
+      )
+    );
+  };
+
+  const filteredContacts = getFilteredContacts();
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
@@ -198,6 +203,13 @@ const SuppliersAndCustomers = () => {
     
     return pageNumbers;
   };
+
+  // Update newContact type when tab changes
+  useEffect(() => {
+    if (!editingId) {
+      setNewContact(prev => ({ ...prev, type: activeTab }));
+    }
+  }, [activeTab, editingId]);
 
   if (loading) {
     return (
@@ -308,13 +320,47 @@ const SuppliersAndCustomers = () => {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow mb-6">
+        <div className="border-b">
+          <nav className="flex -mb-px">
+            <button
+              onClick={() => setActiveTab('customer')}
+              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
+                activeTab === 'customer'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Customers
+              <span className="ml-2 bg-gray-100 text-gray-900 py-0.5 px-2 rounded-full text-xs">
+                {contacts.filter(c => c.type === 'customer').length}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('supplier')}
+              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
+                activeTab === 'supplier'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Suppliers
+              <span className="ml-2 bg-gray-100 text-gray-900 py-0.5 px-2 rounded-full text-xs">
+                {contacts.filter(c => c.type === 'supplier').length}
+              </span>
+            </button>
+          </nav>
+        </div>
+      </div>
+
       {/* Search */}
       <div className="bg-white rounded-lg shadow p-4 mb-6">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="text"
-            placeholder="Search by name, phone, or email..."
+            placeholder={`Search ${activeTab === 'customer' ? 'customers' : 'suppliers'} by name, phone, or email...`}
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -326,13 +372,16 @@ const SuppliersAndCustomers = () => {
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b">
           <h3 className="text-lg font-semibold text-gray-900">
-            All Contacts ({filteredContacts.length}) {totalPages > 1 && `- Page ${currentPage} of ${totalPages}`}
+            {activeTab === 'customer' ? 'Customers' : 'Suppliers'} ({filteredContacts.length}) {totalPages > 1 && `- Page ${currentPage} of ${totalPages}`}
           </h3>
         </div>
 
         {currentContacts.length === 0 ? (
           <div className="text-center py-20 text-gray-500">
-            {contacts.length === 0 ? 'No contacts found. Add your first contact above.' : 'No contacts match your search.'}
+            {contacts.filter(c => c.type === activeTab).length === 0 
+              ? `No ${activeTab === 'customer' ? 'customers' : 'suppliers'} found. Add your first ${activeTab === 'customer' ? 'customer' : 'supplier'} above.`
+              : 'No contacts match your search.'
+            }
           </div>
         ) : (
           <>
@@ -392,7 +441,7 @@ const SuppliersAndCustomers = () => {
             {totalPages > 1 && (
               <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
                 <p className="text-sm text-gray-600">
-                  Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredContacts.length)} of {filteredContacts.length} contacts
+                  Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredContacts.length)} of {filteredContacts.length} {activeTab === 'customer' ? 'customers' : 'suppliers'}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
