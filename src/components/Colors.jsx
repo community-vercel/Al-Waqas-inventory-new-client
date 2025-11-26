@@ -100,93 +100,95 @@ const Colors = () => {
   };
 
   const addColor = async () => {
-    if (!newColor.name.trim() || !newColor.codeName.trim() || !validateHexCode(newColor.hexCode)) {
-      setError('Please fill all fields correctly');
-      return;
-    }
+  if (!newColor.name.trim() || !newColor.codeName.trim() || !validateHexCode(newColor.hexCode)) {
+    setError('Please fill all fields correctly');
+    return;
+  }
 
-    // Check for duplicate hex code before submitting
-    if (isHexCodeDuplicate(newColor.hexCode)) {
-      const existing = colors.find(color => 
+  // ONLY check for duplicate hex code before submitting
+  if (isHexCodeDuplicate(newColor.hexCode)) {
+    const existing = colors.find(color => 
+      color.hexCode.toLowerCase() === newColor.hexCode.toLowerCase()
+    );
+    
+    if (existing) {
+      setSearchTerm(existing.hexCode);
+      setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existing.name}" (${existing.codeName})`);
+    }
+    return;
+  }
+
+  try {
+    setSubmitting(true);
+    setError('');
+    await colorsAPI.create(newColor);
+    setNewColor({ name: '', codeName: '', hexCode: '#000000' });
+    setHexInput('');
+    setHexStatus('');
+    setExistingColor(null);
+    setSuccess('Color added successfully!');
+    setTimeout(() => setSuccess(''), 3000);
+    fetchColors();
+  } catch (error) {
+    if (error.response?.data?.message?.includes('hex code')) {
+      // Server-side duplicate check failed for hex code
+      await fetchColors();
+      const existingColor = colors.find(color => 
         color.hexCode.toLowerCase() === newColor.hexCode.toLowerCase()
       );
       
-      if (existing) {
-        setSearchTerm(existing.hexCode);
-        setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existing.name}" (${existing.codeName})`);
-      }
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setError('');
-      await colorsAPI.create(newColor);
-      setNewColor({ name: '', codeName: '', hexCode: '#000000' });
-      setHexInput('');
-      setHexStatus('');
-      setExistingColor(null);
-      setSuccess('Color added successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-      fetchColors(); // Refresh the list to get the latest data
-    } catch (error) {
-      if (error.response?.data?.message === "Color with this hex code already exists") {
-        // Server-side duplicate check failed, refresh and show the existing color
-        await fetchColors();
-        const existingColor = colors.find(color => 
-          color.hexCode.toLowerCase() === newColor.hexCode.toLowerCase()
-        );
-        
-        if (existingColor) {
-          setSearchTerm(existingColor.hexCode);
-          setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existingColor.name}" (${existingColor.codeName})`);
-        } else {
-          setError('Color with this hex code already exists. Please use a different hex code.');
-        }
+      if (existingColor) {
+        setSearchTerm(existingColor.hexCode);
+        setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existingColor.name}" (${existingColor.codeName})`);
       } else {
-        setError(error.response?.data?.message || 'Failed to add color');
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const updateColor = async () => {
-    if (!editingColor.name.trim() || !editingColor.codeName.trim() || !validateHexCode(editingColor.hexCode)) {
-      setError('Please fill all fields correctly');
-      return;
-    }
-
-    // Check for duplicate hex code before updating (excluding current color)
-    if (isHexCodeDuplicate(editingColor.hexCode, editingColor._id)) {
-      setError(`Color with hex code ${editingColor.hexCode.toUpperCase()} already exists!`);
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setError('');
-      await colorsAPI.update(editingColor._id, {
-        name: editingColor.name,
-        codeName: editingColor.codeName,
-        hexCode: editingColor.hexCode
-      });
-      setEditingColor(null);
-      setHexInput('');
-      setHexStatus('');
-      setSuccess('Color updated successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-      fetchColors();
-    } catch (error) {
-      if (error.response?.data?.message === "Color with this hex code already exists") {
         setError('Color with this hex code already exists. Please use a different hex code.');
-      } else {
-        setError(error.response?.data?.message || 'Failed to update color');
       }
-    } finally {
-      setSubmitting(false);
+    } else {
+      setError(error.response?.data?.message || 'Failed to add color');
     }
-  };
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+const updateColor = async () => {
+  if (!editingColor.name.trim() || !editingColor.codeName.trim() || !validateHexCode(editingColor.hexCode)) {
+    setError('Please fill all fields correctly');
+    return;
+  }
+
+  // ONLY check for duplicate hex code before updating (excluding current color)
+  if (isHexCodeDuplicate(editingColor.hexCode, editingColor._id)) {
+    setError(`Color with hex code ${editingColor.hexCode.toUpperCase()} already exists!`);
+    return;
+  }
+
+  try {
+    setSubmitting(true);
+    setError('');
+    await colorsAPI.update(editingColor._id, {
+      name: editingColor.name,
+      codeName: editingColor.codeName,
+      hexCode: editingColor.hexCode
+    });
+    setEditingColor(null);
+    setHexInput('');
+    setHexStatus('');
+    setSuccess('Color updated successfully!');
+    setTimeout(() => setSuccess(''), 3000);
+    fetchColors();
+  } catch (error) {
+    if (error.response?.data?.message?.includes('hex code')) {
+      setError('Color with this hex code already exists. Please use a different hex code.');
+    } else {
+      setError(error.response?.data?.message || 'Failed to update color');
+    }
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+ 
 
   const deleteColor = async (id) => {
     if (!window.confirm('Are you sure you want to delete this color?')) return;
