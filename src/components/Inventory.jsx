@@ -1,28 +1,46 @@
-// components/Inventory.jsx - FINAL WITH PAGINATION & PERSISTENT PAGE
+// components/Inventory.jsx - WITH SEARCH & PAGINATION
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Package, AlertTriangle, TrendingUp, TrendingDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Package, AlertTriangle, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { inventoryAPI } from './../../services/api';
 
 const Inventory = () => {
   const [inventory, setInventory] = useState([]);
+  const [filteredInventory, setFilteredInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Get current page from URL, default to 1
+  // Get current page and search term from URL
   const currentPage = parseInt(searchParams.get('page') || '1', 10);
+  const searchTerm = searchParams.get('search') || '';
   const itemsPerPage = 10;
 
   useEffect(() => {
     fetchInventory();
   }, []);
 
+  useEffect(() => {
+    // Filter inventory whenever search term changes
+    if (searchTerm) {
+      const filtered = inventory.filter(item => 
+        item.product?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.product?.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.color?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.color?.codeName?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredInventory(filtered);
+    } else {
+      setFilteredInventory(inventory);
+    }
+  }, [searchTerm, inventory]);
+
   const fetchInventory = async () => {
     try {
       setLoading(true);
       const response = await inventoryAPI.getAll();
       setInventory(response.data.data || []);
+      setFilteredInventory(response.data.data || []);
     } catch (error) {
       setError('Failed to fetch inventory');
       console.error('Error:', error);
@@ -37,21 +55,35 @@ const Inventory = () => {
     return { status: 'In Stock', color: 'bg-green-100 text-green-800', icon: TrendingUp };
   };
 
-  const totalItems = inventory.reduce((sum, item) => sum + item.quantity, 0);
-  const totalValue = inventory.reduce((sum, item) => sum + (item.quantity * (item.product?.purchasePrice || 0)), 0);
-  const lowStockCount = inventory.filter(i => i.quantity > 0 && i.quantity <= i.minStockLevel).length;
-  const outOfStockCount = inventory.filter(i => i.quantity === 0).length;
+  const handleSearch = (term) => {
+    const params = {};
+    if (term) params.search = term;
+    if (currentPage > 1) params.page = '1'; // Reset to page 1 when searching
+    setSearchParams(params);
+  };
 
-  // Pagination logic
-  const totalPages = Math.ceil(inventory.length / itemsPerPage);
+  const clearSearch = () => {
+    const params = {};
+    if (currentPage > 1) params.page = currentPage.toString();
+    setSearchParams(params);
+  };
+
+  const totalItems = filteredInventory.reduce((sum, item) => sum + item.quantity, 0);
+  const totalValue = filteredInventory.reduce((sum, item) => sum + (item.quantity * (item.product?.purchasePrice || 0)), 0);
+  const lowStockCount = filteredInventory.filter(i => i.quantity > 0 && i.quantity <= i.minStockLevel).length;
+  const outOfStockCount = filteredInventory.filter(i => i.quantity === 0).length;
+
+  // Pagination logic for filtered results
+  const totalPages = Math.ceil(filteredInventory.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedInventory = inventory.slice(startIndex, endIndex);
+  const paginatedInventory = filteredInventory.slice(startIndex, endIndex);
 
   const goToPage = (page) => {
-    if (page >= 1 && page <= totalPages) {
-      setSearchParams({ page: page.toString() });
-    }
+    const params = {};
+    if (searchTerm) params.search = searchTerm;
+    if (page > 1) params.page = page.toString();
+    setSearchParams(params);
   };
 
   if (loading) {
@@ -88,6 +120,35 @@ const Inventory = () => {
         </div>
       )}
 
+      {/* Search Bar */}
+      <div className="mb-6">
+        <div className="relative max-w-md">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search size={20} className="text-gray-400" />
+          </div>
+          <input
+            type="text"
+            placeholder="Search products, types, colors..."
+            value={searchTerm}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          {searchTerm && (
+            <button
+              onClick={clearSearch}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+            >
+              ×
+            </button>
+          )}
+        </div>
+        {searchTerm && (
+          <p className="mt-2 text-sm text-gray-600">
+            Found {filteredInventory.length} results for "{searchTerm}"
+          </p>
+        )}
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
@@ -105,7 +166,7 @@ const Inventory = () => {
             <div>
               <p className="text-sm text-gray-600">In Stock</p>
               <p className="text-2xl font-bold text-gray-800 mt-1">
-                {inventory.filter(i => i.quantity > i.minStockLevel).length}
+                {filteredInventory.filter(i => i.quantity > i.minStockLevel).length}
               </p>
             </div>
             <TrendingUp size={36} className="text-green-500" />
@@ -148,18 +209,31 @@ const Inventory = () => {
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b flex justify-between items-center">
           <h3 className="text-lg font-semibold text-gray-900">
-            Stock by Product & Color ({inventory.length} entries)
+            Stock by Product & Color ({filteredInventory.length} entries)
+            {searchTerm && <span className="text-blue-600 ml-2">(Filtered)</span>}
           </h3>
           <p className="text-sm text-gray-600">
             Page {currentPage} of {totalPages}
           </p>
         </div>
 
-        {inventory.length === 0 ? (
+        {filteredInventory.length === 0 ? (
           <div className="text-center py-16">
             <Package size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-lg text-gray-500">No stock available</p>
-            <p className="text-gray-400 mt-2">Start making purchases to track inventory</p>
+            <p className="text-lg text-gray-500">
+              {searchTerm ? 'No matching products found' : 'No stock available'}
+            </p>
+            <p className="text-gray-400 mt-2">
+              {searchTerm ? 'Try a different search term' : 'Start making purchases to track inventory'}
+            </p>
+            {searchTerm && (
+              <button
+                onClick={clearSearch}
+                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              >
+                Clear Search
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -229,7 +303,8 @@ const Inventory = () => {
             {totalPages > 1 && (
               <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
                 <p className="text-sm text-gray-600">
-                  Showing {startIndex + 1} to {Math.min(endIndex, inventory.length)} of {inventory.length} entries
+                  Showing {startIndex + 1} to {Math.min(endIndex, filteredInventory.length)} of {filteredInventory.length} entries
+                  {searchTerm && <span className="text-blue-600"> (Filtered)</span>}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
