@@ -46,7 +46,7 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  // Login function
+  // Login function - FIXED VERSION
   const login = async (email, password) => {
     try {
       const response = await authAPI.login(email, password);
@@ -62,18 +62,37 @@ export const AuthProvider = ({ children }) => {
         setToken(userToken);
         setUser(userData);
         
-        return { success: true, data: response.data };
+        return { 
+          success: true, 
+          data: response.data,
+          message: 'Login successful'
+        };
       } else {
+        // Login failed but API returned success: false
         return { 
           success: false, 
-          message: response.data.message || 'Login failed' 
+          message: response.data.message || 'Invalid email or password',
+          data: null
         };
       }
     } catch (error) {
       console.error('Login error:', error);
+      
+      // Handle different types of errors
+      let errorMessage = 'Login failed. Please try again.';
+      
+      if (error.response) {
+        // Server responded with error status
+        errorMessage = error.response.data?.message || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = 'Network error. Please check your connection.';
+      }
+      
       return { 
         success: false, 
-        message: error.response?.data?.message || 'Login failed. Please try again.' 
+        message: errorMessage,
+        data: null
       };
     }
   };

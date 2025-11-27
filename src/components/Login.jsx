@@ -14,31 +14,39 @@ const Login = () => {
 
   const LOGO_URL = "https://alwaqaspaint.com/AlWaqas%20Paint%20&%20Hardware.svg";
   const SIDE_IMAGE_URL = "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80";
+const handleSubmit = async (e) => {
+  e.preventDefault(); // ← This MUST be the very first line
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!email || !password) {
-      setMessage('Please enter email and password');
+  setMessage('');
+  setMessageType('');
+
+  // Client-side validation
+  if (!email.trim() || !password) {
+    setMessage('Please fill in all fields');
+    setMessageType('error');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const result = await login(email, password);
+
+    if (!result.success) {
+      setMessage(result.message || 'Invalid credentials');
       setMessageType('error');
-      return;
+    } else {
+      setMessage('Login successful! Redirecting...');
+      setMessageType('success');
     }
-
-    setLoading(true);
-    setMessage('');
-
-    try {
-      const result = await login(email, password);
-      if (!result.success) {
-        setMessage(result.message || 'Invalid credentials');
-        setMessageType('error');
-      }
-    } catch (error) {
-      setMessage('Login failed. Please try again.');
-      setMessageType('error');
-    } finally {
-      setLoading(false);
-    }
-  };
+  } catch (err) {
+    setMessage('Something went wrong. Please try again.');
+    setMessageType('error');
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-white flex">
@@ -115,8 +123,7 @@ const Login = () => {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div>
+<form onSubmit={handleSubmit} className="space-y-6" noValidate>              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Email Address
                 </label>

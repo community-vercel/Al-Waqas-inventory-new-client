@@ -27,12 +27,18 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Only redirect on 401 if we're NOT on the login page
     if (error.response?.status === 401) {
-      // Token expired or invalid
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      const isLoginPage = window.location.pathname === '/login';
+      
+      if (!isLoginPage) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login?session=expired';
+      }
+      // Do NOT redirect when on /login — just let the login component handle the error
     }
+    
     return Promise.reject(error);
   }
 );
