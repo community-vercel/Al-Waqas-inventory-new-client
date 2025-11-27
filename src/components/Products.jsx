@@ -37,6 +37,7 @@ const Products = () => {
     { value: 'dibbi', label: 'Dibbi' },
     { value: 'quarter', label: 'Quarter' },
     { value: 'p', label: 'P' },
+    { value: 'drum', label: 'Drum' }, // Added drum option
     { value: 'other', label: 'Other' } 
   ];
 
@@ -184,7 +185,7 @@ const Products = () => {
   };
 
   const downloadTemplate = () => {
-    const csv = "name,type,purchasePrice,salePrice,discount,colors\nNippon Enamel,gallon,2500,3200,5,White,Black,Red\nBerger Silk,dibbi,900,1200,0,Blue,Green\nSpecial Product,other,1500,2000,10,Yellow,Orange"; 
+    const csv = "name,type,purchasePrice,salePrice,discount,colors\nNippon Enamel,gallon,2500,3200,5,White,Black,Red\nBerger Silk,dibbi,900,1200,0,Blue,Green\nSpecial Product,drum,1500,2000,10,Yellow,Orange"; // Updated example with drum
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
