@@ -1,28 +1,47 @@
-// components/Purchases.jsx - WITH HORIZONTAL PRODUCT SEARCH CARDS
+// components/Purchases.jsx - UPDATED WITH GLOBAL SEARCH + EDIT/DELETE
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Edit, Download, ChevronLeft, ChevronRight, Calendar, Search, X } from 'lucide-react';
-import { purchasesAPI, productsAPI, colorsAPI, contactsAPI } from './../../services/api';
+import { 
+  Plus, Trash2, Download, Search, Upload, 
+  CheckCircle, AlertCircle, Loader2, Printer, 
+  ChevronLeft, ChevronRight, FileText, Edit, X,
+  Calendar, Filter, RefreshCw
+} from 'lucide-react';
+import { purchasesAPI, productsAPI, contactsAPI, colorsAPI } from './../../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const Purchases = () => {
   const [purchases, setPurchases] = useState([]);
-  const [allPurchases, setAllPurchases] = useState([]);
+  const [filteredPurchases, setFilteredPurchases] = useState([]);
   const [products, setProducts] = useState([]);
-  const [colors, setColors] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [filteredColors, setFilteredColors] = useState([]);
+  const [colors, setColors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [editingPurchase, setEditingPurchase] = useState(null);
 
-  // New state for product search
+  // Multi-product purchase
+  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [purchaseItems, setPurchaseItems] = useState([]);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
 
+  // Edit purchase
+  const [editingPurchase, setEditingPurchase] = useState(null);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    product: '',
+    supplier: '',
+    quantity: '',
+    unitPrice: '',
+    color: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  // Global search
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
@@ -30,40 +49,37 @@ const Purchases = () => {
     product: ''
   });
 
-  const [newPurchase, setNewPurchase] = useState({
-    date: new Date().toISOString().split('T')[0],
-    product: '',
-    color: '',
-    supplier: '',
-    quantity: '',
-    unitPrice: ''
-  });
+  // Print modal
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [selectedSupplierForPrint, setSelectedSupplierForPrint] = useState('');
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const currentPage = parseInt(searchParams.get('page') || '1', 10);
-  const itemsPerPage = 10;
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   useEffect(() => {
-    fetchAllPurchases();
-    fetchFilteredPurchases();
-  }, [filters, currentPage]);
+    fetchPurchases();
+    fetchProducts();
+    fetchSuppliers();
+    fetchColors();
+  }, []);
 
-  const fetchAllPurchases = async () => {
-    try {
-      const response = await purchasesAPI.getAll({});
-      setAllPurchases(response.data.data || []);
-    } catch (error) {
-      console.error('Failed to fetch all purchases for PDF');
-    }
-  };
-
-  const fetchFilteredPurchases = async () => {
+  const fetchPurchases = async () => {
     try {
       setLoading(true);
-      const response = await purchasesAPI.getAll(filters);
-      setPurchases(response.data.data || []);
-    } catch (error) {
-      setError('Failed to fetch purchases');
+      const params = {};
+      if (filters.startDate) params.startDate = filters.startDate;
+      if (filters.endDate) params.endDate = filters.endDate;
+      if (filters.supplier) params.supplier = filters.supplier;
+      if (filters.product) params.product = filters.product;
+
+      const res = await purchasesAPI.getAll(params);
+      console.log('Purchases data with codes:', res.data.data);
+      setPurchases(res.data.data || []);
+      setFilteredPurchases(res.data.data || []);
+    } catch (err) {
+      console.error('Fetch purchases error:', err);
+      setError('Failed to load purchases');
     } finally {
       setLoading(false);
     }
@@ -71,250 +87,351 @@ const Purchases = () => {
 
   const fetchProducts = async () => {
     try {
-      const response = await productsAPI.getAll();
-      setProducts(response.data.data || []);
-    } catch (error) {
-      console.error('Error fetching products:', error);
-    }
-  };
-
-  const fetchColors = async () => {
-    try {
-      const response = await colorsAPI.getAll();
-      setColors(response.data.data || []);
-    } catch (error) {
-      console.error('Error fetching colors:', error);
+      const res = await productsAPI.getAll();
+      setProducts(res.data.data || []);
+    } catch (err) {
+      console.error('Fetch products error:', err);
     }
   };
 
   const fetchSuppliers = async () => {
     try {
-      console.log('Fetching suppliers...');
-      const response = await contactsAPI.getByType('supplier');
-      console.log('Suppliers API response:', response);
-      console.log('Suppliers data:', response.data);
-      
-      if (response.data && response.data.data) {
-        setSuppliers(response.data.data);
-        console.log('Suppliers set:', response.data.data);
-      } else if (response.data) {
-        setSuppliers(response.data);
-      } else {
-        console.error('Unexpected response structure:', response);
-        setSuppliers([]);
-      }
-    } catch (error) {
-      console.error('Error fetching suppliers:', error);
-      console.error('Error response:', error.response);
-      setSuppliers([]);
+      const res = await contactsAPI.getByType('supplier');
+      setSuppliers(res.data.data || []);
+    } catch (err) {
+      console.error('Fetch suppliers error:', err);
     }
   };
 
-  useEffect(() => {
-    fetchProducts();
-    fetchColors();
-    fetchSuppliers();
-  }, []);
-
-  // AUTO FILL PURCHASE PRICE FROM PRODUCT
-  useEffect(() => {
-    if (newPurchase.product) {
-      const selectedProduct = products.find(p => p._id === newPurchase.product);
-      
-      if (selectedProduct) {
-        setNewPurchase(prev => ({ 
-          ...prev, 
-          unitPrice: selectedProduct.purchasePrice?.toString() || '',
-          color: ''
-        }));
-
-        if (selectedProduct.colors && selectedProduct.colors.length > 0) {
-          setFilteredColors(selectedProduct.colors);
-        } else {
-          setFilteredColors([]);
-        }
-      }
-    } else {
-      setFilteredColors([]);
-      setNewPurchase(prev => ({ ...prev, unitPrice: '', color: '' }));
+  const fetchColors = async () => {
+    try {
+      const res = await colorsAPI.getAll();
+      setColors(res.data.data || []);
+    } catch (err) {
+      console.error('Fetch colors error:', err);
     }
-  }, [newPurchase.product, products]);
-
-  // Filter products based on search term
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
-    (product.type && product.type.toLowerCase().includes(productSearchTerm.toLowerCase()))
-  );
-
-  const handleProductSelect = (productId) => {
-    setNewPurchase(prev => ({ ...prev, product: productId }));
-    setProductSearchTerm('');
-    setIsProductDropdownOpen(false);
   };
 
-  const handleProductSearchChange = (e) => {
-    setProductSearchTerm(e.target.value);
-    setIsProductDropdownOpen(true);
-  };
-
-  const clearProductSearch = () => {
-    setProductSearchTerm('');
-    setNewPurchase(prev => ({ ...prev, product: '' }));
-    setIsProductDropdownOpen(false);
-  };
-
-  const handleSubmit = async () => {
-    if (!newPurchase.product || !newPurchase.supplier || !newPurchase.quantity || !newPurchase.unitPrice) {
-      setError('Please fill all required fields');
+  // GLOBAL SEARCH FUNCTION - searches across all pages
+  const handleGlobalSearch = () => {
+    if (!globalSearch.trim()) {
+      setFilteredPurchases(purchases);
+      setCurrentPage(1);
       return;
     }
 
-    if (parseInt(newPurchase.quantity) <= 0 || parseFloat(newPurchase.unitPrice) <= 0) {
-      setError('Quantity and price must be greater than 0');
+    const searchTerm = globalSearch.toLowerCase().trim();
+    const filtered = purchases.filter(purchase => {
+      return (
+        purchase.product?.name?.toLowerCase().includes(searchTerm) ||
+        purchase.product?.code?.toLowerCase().includes(searchTerm) ||
+        purchase.product?.type?.toLowerCase().includes(searchTerm) ||
+        purchase.supplier?.toLowerCase().includes(searchTerm) ||
+        purchase.color?.name?.toLowerCase().includes(searchTerm) ||
+        purchase.color?.codeName?.toLowerCase().includes(searchTerm) ||
+        purchase.quantity?.toString().includes(searchTerm) ||
+        purchase.unitPrice?.toString().includes(searchTerm) ||
+        purchase.totalAmount?.toString().includes(searchTerm) ||
+        new Date(purchase.date).toLocaleDateString().toLowerCase().includes(searchTerm)
+      );
+    });
+
+    setFilteredPurchases(filtered);
+    setCurrentPage(1);
+  };
+
+  useEffect(() => {
+    const delaySearch = setTimeout(() => {
+      handleGlobalSearch();
+    }, 300);
+
+    return () => clearTimeout(delaySearch);
+  }, [globalSearch, purchases]);
+
+  // Apply advanced filters
+  const applyFilters = () => {
+    let filtered = [...purchases];
+
+    if (filters.startDate) {
+      filtered = filtered.filter(p => new Date(p.date) >= new Date(filters.startDate));
+    }
+
+    if (filters.endDate) {
+      const endDate = new Date(filters.endDate);
+      endDate.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(p => new Date(p.date) <= endDate);
+    }
+
+    if (filters.supplier) {
+      filtered = filtered.filter(p => 
+        p.supplier.toLowerCase().includes(filters.supplier.toLowerCase())
+      );
+    }
+
+    if (filters.product) {
+      filtered = filtered.filter(p => 
+        p.product?._id === filters.product ||
+        p.product?.name.toLowerCase().includes(filters.product.toLowerCase()) ||
+        p.product?.code?.toLowerCase().includes(filters.product.toLowerCase())
+      );
+    }
+
+    setFilteredPurchases(filtered);
+    setCurrentPage(1);
+    setShowAdvancedFilters(false);
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      startDate: '',
+      endDate: '',
+      supplier: '',
+      product: ''
+    });
+    setGlobalSearch('');
+    setFilteredPurchases(purchases);
+    setCurrentPage(1);
+  };
+
+  // Product search for adding purchases
+  const filteredProducts = products.filter(p =>
+    p.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
+    p.type.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
+    (p.code && p.code.toLowerCase().includes(productSearchTerm.toLowerCase()))
+  );
+
+  const handleProductSelect = (product) => {
+    const exists = purchaseItems.find(item => item.product === product._id);
+    if (!exists) {
+      setPurchaseItems([...purchaseItems, {
+        product: product._id,
+        name: product.name,
+        code: product.code || '',
+        type: product.type,
+        purchasePrice: product.purchasePrice,
+        quantity: 1,
+        total: product.purchasePrice
+      }]);
+    }
+    setProductSearchTerm('');
+    setIsProductDropdownOpen(false);
+  };
+
+  const updateItemQuantity = (index, qty) => {
+    if (qty < 1) qty = 1;
+    const updated = [...purchaseItems];
+    updated[index].quantity = qty;
+    updated[index].total = qty * updated[index].purchasePrice;
+    setPurchaseItems(updated);
+  };
+
+  const removeItem = (index) => {
+    setPurchaseItems(purchaseItems.filter((_, i) => i !== index));
+  };
+
+  const getTotalAmount = () => {
+    return purchaseItems.reduce((sum, item) => sum + item.total, 0);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedSupplier || purchaseItems.length === 0) {
+      setError('Please select supplier and add products');
       return;
     }
 
     try {
       setSubmitting(true);
-      setError('');
+      const promises = purchaseItems.map(item =>
+        purchasesAPI.create({
+          product: item.product,
+          supplier: selectedSupplier,
+          quantity: item.quantity,
+          unitPrice: item.purchasePrice,
+          color: item.color || null
+        })
+      );
 
-      const purchaseData = {
-        product: newPurchase.product,
-        supplier: newPurchase.supplier.trim(),
-        quantity: parseInt(newPurchase.quantity),
-        unitPrice: parseFloat(newPurchase.unitPrice),
-        color: newPurchase.color || null
-      };
-
-      if (editingPurchase) {
-        await purchasesAPI.update(editingPurchase._id, purchaseData);
-        setSuccess('Purchase updated successfully!');
-        setEditingPurchase(null);
-      } else {
-        await purchasesAPI.create(purchaseData);
-        setSuccess('Purchase added successfully!');
-      }
-
-      resetForm();
-      setTimeout(() => setSuccess(''), 3000);
-      fetchAllPurchases();
-      fetchFilteredPurchases();
-    } catch (error) {
-      setError(error.response?.data?.message || 'Failed to save purchase');
+      await Promise.all(promises);
+      setSuccess(`Purchase completed! ${purchaseItems.length} items from ${selectedSupplier}`);
+      setPurchaseItems([]);
+      setSelectedSupplier('');
+      setTimeout(() => setSuccess(''), 4000);
+      fetchPurchases();
+      
+      window.dispatchEvent(new Event('inventoryShouldUpdate'));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save purchase');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const resetForm = () => {
-    setNewPurchase({
-      date: new Date().toISOString().split('T')[0],
-      product: '',
-      color: '',
-      supplier: '',
-      quantity: '',
-      unitPrice: ''
-    });
-    setProductSearchTerm('');
-    setIsProductDropdownOpen(false);
-    setEditingPurchase(null);
-  };
-
-  const editPurchase = (purchase) => {
+  // EDIT PURCHASE FUNCTIONS
+  const handleEdit = (purchase) => {
     setEditingPurchase(purchase);
-    const selectedProduct = products.find(p => p._id === purchase.product._id);
-    setNewPurchase({
-      date: new Date(purchase.date).toISOString().split('T')[0],
-      product: purchase.product._id,
+    setEditFormData({
+      product: purchase.product?._id || '',
+      supplier: purchase.supplier || '',
+      quantity: purchase.quantity || '',
+      unitPrice: purchase.unitPrice || '',
       color: purchase.color?._id || '',
-      supplier: purchase.supplier,
-      quantity: purchase.quantity.toString(),
-      unitPrice: purchase.unitPrice.toString()
+      date: purchase.date ? new Date(purchase.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
     });
-    setProductSearchTerm(selectedProduct ? selectedProduct.name : '');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setShowEditForm(true);
   };
 
-  const deletePurchase = async (id) => {
-    if (!window.confirm('Delete this purchase?')) return;
+  const handleUpdatePurchase = async () => {
+    if (!editFormData.product || !editFormData.supplier || !editFormData.quantity || !editFormData.unitPrice) {
+      setError('Please fill all required fields');
+      return;
+    }
+
     try {
-      await purchasesAPI.delete(id);
-      setSuccess('Purchase deleted!');
-      setTimeout(() => setSuccess(''), 3000);
-      fetchAllPurchases();
-      fetchFilteredPurchases();
-    } catch (error) {
-      setError('Failed to delete');
+      setSubmitting(true);
+      const res = await purchasesAPI.update(editingPurchase._id, editFormData);
+      
+      setSuccess('Purchase updated successfully!');
+      setTimeout(() => {
+        setSuccess('');
+        setShowEditForm(false);
+        setEditingPurchase(null);
+      }, 2000);
+      
+      fetchPurchases();
+      window.dispatchEvent(new Event('inventoryShouldUpdate'));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update purchase');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const applyFilters = () => {
-    setSearchParams({ page: '1' });
+  const handleDeletePurchase = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this purchase? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await purchasesAPI.delete(id);
+      setSuccess('Purchase deleted successfully!');
+      setTimeout(() => setSuccess(''), 2000);
+      fetchPurchases();
+      window.dispatchEvent(new Event('inventoryShouldUpdate'));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete purchase');
+    }
   };
 
-  const clearFilters = () => {
-    setFilters({ startDate: '', endDate: '', supplier: '', product: '' });
-    setSearchParams({});
-  };
-
-  // Generate PDF
-  const generateAllPurchasesPDF = () => {
-    const doc = new jsPDF('p', 'mm', 'a4');
-    doc.setFontSize(20);
-    doc.text('ALWAQAS PAINT SHOP - All Purchases Report', 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
-
-    const tableData = allPurchases.map(p => [
-      new Date(p.date).toLocaleDateString(),
-      p.product?.name || '—',
-      p.color?.name || 'No Color',
-      p.supplier,
-      p.quantity,
-      `Rs. ${p.unitPrice.toLocaleString()}`,
-      `Rs. ${p.totalAmount.toLocaleString()}`
-    ]);
-
-    autoTable(doc, {
-      head: [['Date', 'Product', 'Color', 'Supplier', 'Qty', 'Price', 'Total']],
-      body: tableData,
-      startY: 40,
-      styles: { fontSize: 10 },
-      headStyles: { fillColor: [59, 130, 246] }
-    });
-
-    doc.save(`all_purchases_${new Date().toISOString().slice(0,10)}.pdf`);
-  };
-
-  // Pagination
-  const totalPages = Math.ceil(purchases.length / itemsPerPage);
+  // PAGINATION LOGIC
+  const totalPages = Math.ceil(filteredPurchases.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedPurchases = purchases.slice(startIndex, endIndex);
+  const currentPurchases = filteredPurchases.slice(startIndex, startIndex + itemsPerPage);
 
   const goToPage = (page) => {
     if (page >= 1 && page <= totalPages) {
-      setSearchParams({ page: page.toString() });
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
-  const totalPurchases = purchases.reduce((sum, p) => sum + p.totalAmount, 0);
-  const totalItems = purchases.reduce((sum, p) => sum + p.quantity, 0);
+  // PRINT FUNCTIONS
+  const printAllPurchases = () => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    doc.setFontSize(20);
+    doc.text('AL WAQAS PAINT AND HARDWARE SHOP', 148, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text('www.alwaqaspaint.com', 148, 28, { align: 'center' });
+    doc.setFontSize(16);
+    doc.text('ALL PURCHASES REPORT', 148, 40, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()} • Total: ${filteredPurchases.length} purchases`, 14, 50);
 
-  if (loading && purchases.length === 0) {
+    const tableData = filteredPurchases.map(p => [
+      new Date(p.date).toLocaleDateString(),
+      p.product?.name || '—',
+      p.product?.code || '—',
+      p.supplier,
+      p.quantity,
+      `Rs. ${p.unitPrice?.toLocaleString() || '0'}`,
+      `Rs. ${p.totalAmount?.toLocaleString() || '0'}`
+    ]);
+
+    autoTable(doc, {
+      head: [['Date', 'Product', 'Code', 'Supplier', 'Qty', 'Price', 'Total']],
+      body: tableData,
+      startY: 60,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255 }
+    });
+
+    doc.save(`purchases_report_${new Date().toISOString().slice(0,10)}.pdf`);
+  };
+
+  const printSupplierInvoice = () => {
+    if (!selectedSupplierForPrint) return;
+
+    const supplierPurchases = filteredPurchases.filter(p => p.supplier === selectedSupplierForPrint);
+    if (supplierPurchases.length === 0) {
+      setError('No purchases found for this supplier');
+      return;
+    }
+
+    const doc = new jsPDF();
+    
+    doc.setFontSize(22);
+    doc.text('AL WAQAS PAINT AND HARDWARE SHOP', 105, 25, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text('www.alwaqaspaint.com', 105, 33, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text('Nadir Plaza, Opposite Lignum Tower, DHA 2, Near Al Janat Mall', 105, 40, { align: 'center' });
+    doc.text('GT Road, Islamabad', 105, 46, { align: 'center' });
+    doc.text('Phone: +92 333 5093223', 105, 52, { align: 'center' });
+
+    doc.setLineWidth(0.5);
+    doc.line(14, 58, 196, 58);
+
+    doc.setFontSize(18);
+    doc.text(`PURCHASE INVOICE - ${selectedSupplierForPrint.toUpperCase()}`, 105, 70, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 80);
+    doc.text(`Total Items: ${supplierPurchases.reduce((s, p) => s + p.quantity, 0)}`, 14, 86);
+
+    const tableData = supplierPurchases.map(p => [
+      p.product?.name || '—',
+      p.product?.code || '—',
+      p.quantity,
+      `Rs. ${p.unitPrice?.toLocaleString() || '0'}`,
+      `Rs. ${p.totalAmount?.toLocaleString() || '0'}`
+    ]);
+
+    autoTable(doc, {
+      head: [['Product', 'Code', 'Qty', 'Price', 'Total']],
+      body: tableData,
+      startY: 90,
+      styles: { fontSize: 11 },
+      headStyles: { fillColor: [52, 73, 94], textColor: 255 },
+      alternateRowStyles: { fillColor: [245, 245, 245] }
+    });
+
+    const finalY = doc.lastAutoTable.finalY || 90;
+    doc.setFontSize(14);
+    doc.text(`GRAND TOTAL: Rs. ${supplierPurchases.reduce((s, p) => s + p.totalAmount, 0).toLocaleString()}`, 196, finalY + 20, { align: 'right' });
+
+    doc.setFontSize(10);
+    doc.text('Thank you for your business!', 105, finalY + 35, { align: 'center' });
+
+    doc.save(`purchase_invoice_${selectedSupplierForPrint.replace(/\s+/g, '_')}.pdf`);
+    setShowPrintModal(false);
+    setSelectedSupplierForPrint('');
+  };
+
+  if (loading) {
     return (
       <div className="p-6">
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-64 mb-6"></div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
-            ))}
-          </div>
-          <div className="space-y-4">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-20 bg-gray-200 rounded-lg"></div>
-            ))}
+          <div className="space-y-6">
+            {[...Array(6)].map((_, i) => <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>)}
           </div>
         </div>
       </div>
@@ -325,288 +442,442 @@ const Purchases = () => {
     <div className="p-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Purchase Management</h1>
-          <p className="text-gray-600 mt-1">Track all your purchases</p>
-        </div>
-        <button
-          onClick={generateAllPurchasesPDF}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center gap-3 shadow-lg font-medium"
-        >
-          <Download size={20} /> Download All PDF
-        </button>
-      </div>
-
-      {success && <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">{success}</div>}
-      {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
-
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
-          <p className="text-sm text-gray-600">Total Purchases</p>
-          <p className="text-2xl font-bold text-gray-800 mt-1">{purchases.length}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
-          <p className="text-sm text-gray-600">Total Amount</p>
-          <p className="text-2xl font-bold text-gray-800 mt-1">Rs. {totalPurchases.toLocaleString()}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-purple-500">
-          <p className="text-sm text-gray-600">Total Items</p>
-          <p className="text-2xl font-bold text-gray-800 mt-1">{totalItems}</p>
+        <h1 className="text-3xl font-bold text-gray-800">Purchase Management</h1>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => setShowPrintModal(true)} 
+            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg flex items-center gap-2"
+          >
+            <Printer size={18} />
+            Print Supplier Invoice
+          </button>
+          <button 
+            onClick={printAllPurchases} 
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center gap-2"
+          >
+            <Download size={18} />
+            All Purchases PDF
+          </button>
         </div>
       </div>
 
-      {/* Date Filter */}
+      {/* Success/Error Messages */}
+      {success && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 flex items-center gap-2">
+          <CheckCircle size={20} /> {success}
+        </div>
+      )}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 flex items-center gap-2">
+          <AlertCircle size={20} /> {error}
+        </div>
+      )}
+
+      {/* GLOBAL SEARCH BAR */}
       <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-6 flex items-center gap-3">
-          <Calendar size={24} />
-          Filter by Date Range
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
             <input
-              type="date"
-              value={filters.startDate}
-              onChange={e => setFilters({ ...filters, startDate: e.target.value })}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              type="text"
+              placeholder="Search across all purchases (product name, code, supplier, color, amount, date...)"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">To Date</label>
-            <input
-              type="date"
-              value={filters.endDate}
-              onChange={e => setFilters({ ...filters, endDate: e.target.value })}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="flex items-end gap-3">
-            <button
-              onClick={applyFilters}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
-            >
-              Apply Filter
-            </button>
-            <button
-              onClick={clearFilters}
-              className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium"
-            >
-              Clear
-            </button>
-          </div>
+          <button
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-2"
+          >
+            <Filter size={18} />
+            Advanced Filters
+          </button>
+          <button
+            onClick={resetFilters}
+            className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-2"
+          >
+            <RefreshCw size={18} />
+            Reset All
+          </button>
         </div>
+
+        {/* Advanced Filters */}
+        {showAdvancedFilters && (
+          <div className="mt-6 p-6 bg-gray-50 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => setFilters({...filters, startDate: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => setFilters({...filters, endDate: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                <select
+                  value={filters.supplier}
+                  onChange={(e) => setFilters({...filters, supplier: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg"
+                >
+                  <option value="">All Suppliers</option>
+                  {suppliers.map(s => (
+                    <option key={s._id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                <select
+                  value={filters.product}
+                  onChange={(e) => setFilters({...filters, product: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg"
+                >
+                  <option value="">All Products</option>
+                  {products.map(p => (
+                    <option key={p._id} value={p._id}>{p.name} ({p.code})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowAdvancedFilters(false)}
+                className="px-6 py-2 bg-gray-500 text-white rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyFilters}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg"
+              >
+                Apply Filters
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Add/Edit Form */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-6">{editingPurchase ? 'Edit Purchase' : 'Add New Purchase'}</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-          <input 
-            type="date" 
-            value={newPurchase.date} 
-            onChange={e => setNewPurchase({ ...newPurchase, date: e.target.value })} 
-            className="px-4 py-3 border rounded-lg" 
-          />
-          
-          {/* Product Search Dropdown */}
+      {/* New Purchase Form */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 className="text-2xl font-bold mb-6">New Purchase</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <label className="block font-medium mb-2">Supplier *</label>
+            <select 
+              value={selectedSupplier} 
+              onChange={e => setSelectedSupplier(e.target.value)} 
+              className="w-full px-4 py-3 border rounded-lg"
+            >
+              <option value="">Select Supplier</option>
+              {suppliers.map(s => (
+                <option key={s._id} value={s.name}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="relative">
+            <label className="block font-medium mb-2">Search Product</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
               <input
                 type="text"
-                placeholder="Search product..."
+                placeholder="Type product name, code, or type..."
                 value={productSearchTerm}
-                onChange={handleProductSearchChange}
+                onChange={e => {
+                  setProductSearchTerm(e.target.value);
+                  setIsProductDropdownOpen(true);
+                }}
                 onFocus={() => setIsProductDropdownOpen(true)}
                 className="w-full pl-10 pr-10 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
               />
-              {productSearchTerm && (
-                <button
-                  onClick={clearProductSearch}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <X size={16} />
-                </button>
-              )}
             </div>
-            
-            {/* Selected Product Display */}
-            {newPurchase.product && !isProductDropdownOpen && (
-              <div className="mt-1 p-2 bg-blue-50 rounded border border-blue-200">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-blue-800">
-                    {products.find(p => p._id === newPurchase.product)?.name}
-                  </span>
-                  <button
-                    onClick={clearProductSearch}
-                    className="text-blue-600 hover:text-blue-800"
+          </div>
+        </div>
+
+        {/* Selected Items */}
+        {purchaseItems.length > 0 && (
+          <div className="mb-6">
+            <h3 className="font-bold mb-3">Selected Items ({purchaseItems.length})</h3>
+            <div className="space-y-3">
+              {purchaseItems.map((item, index) => (
+                <div key={index} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-mono bg-gray-100 px-2 py-1 rounded mr-2">{item.code || 'No Code'}</span>
+                      • {item.type}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={e => updateItemQuantity(index, parseInt(e.target.value) || 1)}
+                    className="w-24 px-3 py-2 border rounded-lg text-center"
+                  />
+                  <div className="w-32 text-right font-bold text-blue-600">
+                    Rs. {item.total.toLocaleString()}
+                  </div>
+                  <button 
+                    onClick={() => removeItem(index)} 
+                    className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg"
                   >
-                    <X size={14} />
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg text-right">
+              <p className="text-2xl font-bold text-blue-800">
+                Grand Total: Rs. {getTotalAmount().toLocaleString()}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Product Search Results */}
+        {isProductDropdownOpen && productSearchTerm && (
+          <div className="mt-2 max-h-96 overflow-y-auto border rounded-lg bg-white shadow-lg z-10">
+            {filteredProducts.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No products found</div>
+            ) : (
+              filteredProducts.map(p => (
+                <button
+                  key={p._id}
+                  onClick={() => handleProductSelect(p)}
+                  className="w-full text-left p-4 hover:bg-blue-50 border-b flex justify-between items-center"
+                >
+                  <div>
+                    <div className="font-medium">{p.name}</div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-mono bg-gray-100 px-2 py-1 rounded mr-2">{p.code || 'No Code'}</span>
+                      • {p.type} • Rs. {p.purchasePrice?.toLocaleString()}
+                    </div>
+                  </div>
+                  <Plus size={20} className="text-blue-600" />
+                </button>
+              ))
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          disabled={submitting || purchaseItems.length === 0 || !selectedSupplier}
+          className="mt-6 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-8 py-4 rounded-lg font-bold text-lg flex items-center gap-2 justify-center"
+        >
+          {submitting ? (
+            <>
+              <Loader2 size={20} className="animate-spin" />
+              Processing...
+            </>
+          ) : (
+            'Complete Purchase'
+          )}
+        </button>
+      </div>
+
+      {/* Edit Purchase Modal */}
+      {showEditForm && editingPurchase && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-bold">Edit Purchase</h3>
+                <button
+                  onClick={() => {
+                    setShowEditForm(false);
+                    setEditingPurchase(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block font-medium mb-2">Date *</label>
+                  <input
+                    type="date"
+                    value={editFormData.date}
+                    onChange={(e) => setEditFormData({...editFormData, date: e.target.value})}
+                    className="w-full px-4 py-3 border rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-medium mb-2">Product *</label>
+                  <select
+                    value={editFormData.product}
+                    onChange={(e) => setEditFormData({...editFormData, product: e.target.value})}
+                    className="w-full px-4 py-3 border rounded-lg"
+                  >
+                    <option value="">Select Product</option>
+                    {products.map(p => (
+                      <option key={p._id} value={p._id}>
+                        {p.name} ({p.code || 'No Code'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-medium mb-2">Supplier *</label>
+                  <input
+                    type="text"
+                    value={editFormData.supplier}
+                    onChange={(e) => setEditFormData({...editFormData, supplier: e.target.value})}
+                    className="w-full px-4 py-3 border rounded-lg"
+                    placeholder="Supplier name"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block font-medium mb-2">Quantity *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={editFormData.quantity}
+                      onChange={(e) => setEditFormData({...editFormData, quantity: e.target.value})}
+                      className="w-full px-4 py-3 border rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium mb-2">Unit Price *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editFormData.unitPrice}
+                      onChange={(e) => setEditFormData({...editFormData, unitPrice: e.target.value})}
+                      className="w-full px-4 py-3 border rounded-lg"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium mb-2">Color (Optional)</label>
+                  <select
+                    value={editFormData.color}
+                    onChange={(e) => setEditFormData({...editFormData, color: e.target.value})}
+                    className="w-full px-4 py-3 border rounded-lg"
+                  >
+                    <option value="">No Color</option>
+                    {colors.map(c => (
+                      <option key={c._id} value={c._id}>
+                        {c.name} ({c.codeName})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="font-bold text-blue-800">
+                    Total Amount: Rs. {(editFormData.quantity * editFormData.unitPrice).toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="flex gap-3 justify-end pt-6">
+                  <button
+                    onClick={() => {
+                      setShowEditForm(false);
+                      setEditingPurchase(null);
+                    }}
+                    className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdatePurchase}
+                    disabled={submitting}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center gap-2"
+                  >
+                    {submitting && <Loader2 size={20} className="animate-spin" />}
+                    {submitting ? 'Updating...' : 'Update Purchase'}
                   </button>
                 </div>
               </div>
-            )}
+            </div>
           </div>
-
-          <select 
-            value={newPurchase.color} 
-            onChange={e => setNewPurchase({ ...newPurchase, color: e.target.value })} 
-            className="px-4 py-3 border rounded-lg" 
-            disabled={!newPurchase.product}
-          >
-            <option value="">No Color</option>
-            {filteredColors.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-          </select>
-          
-          <select 
-            value={newPurchase.supplier} 
-            onChange={e => setNewPurchase({ ...newPurchase, supplier: e.target.value })}
-            className="px-4 py-3 border rounded-lg"
-          >
-            <option value="">Select Supplier</option>
-            {suppliers.map(supplier => (
-              <option key={supplier._id} value={supplier.name}>
-                {supplier.name}
-              </option>
-            ))}
-          </select>
-          
-          <input 
-            type="number" 
-            placeholder="Qty" 
-            min="1" 
-            value={newPurchase.quantity} 
-            onChange={e => setNewPurchase({ ...newPurchase, quantity: e.target.value })} 
-            className="px-4 py-3 border rounded-lg" 
-          />
-          
-          <input 
-            type="number" 
-            placeholder="Price" 
-            step="0.01" 
-            value={newPurchase.unitPrice} 
-            onChange={e => setNewPurchase({ ...newPurchase, unitPrice: e.target.value })} 
-            className="px-4 py-3 border rounded-lg bg-gray-50 font-medium"
-            readOnly={!!newPurchase.product}
-          />
         </div>
+      )}
 
-        {/* Horizontal Product Search Results */}
-        {isProductDropdownOpen && filteredProducts.length > 0 && (
-          <div className="mt-4">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-medium text-gray-700">
-                Search Results ({filteredProducts.length} products)
-              </h3>
-              <button
-                onClick={() => setIsProductDropdownOpen(false)}
-                className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+      {/* Print Supplier Modal */}
+      {showPrintModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8">
+            <h3 className="text-2xl font-bold mb-6">Print Supplier Invoice</h3>
+            <select
+              value={selectedSupplierForPrint}
+              onChange={e => setSelectedSupplierForPrint(e.target.value)}
+              className="w-full px-4 py-3 border rounded-lg mb-6"
+            >
+              <option value="">Select Supplier</option>
+              {suppliers.map(s => (
+                <option key={s._id} value={s.name}>{s.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setShowPrintModal(false)} 
+                className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
               >
-                <X size={14} /> Close
+                Cancel
+              </button>
+              <button
+                onClick={printSupplierInvoice}
+                disabled={!selectedSupplierForPrint}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg flex items-center gap-2"
+              >
+                <Printer size={18} />
+                Print Invoice
               </button>
             </div>
-            <div className="overflow-x-auto pb-4">
-              <div className="flex gap-3" style={{ minWidth: 'max-content' }}>
-                {filteredProducts.map(product => (
-                  <button
-                    key={product._id}
-                    onClick={() => handleProductSelect(product._id)}
-                    className="flex-shrink-0 w-64 bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-500 hover:shadow-md transition-all duration-200 text-left"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-gray-900 text-sm truncate">
-                          {product.name}
-                        </h4>
-                        <p className="text-xs text-gray-500 uppercase mt-1">
-                          {product.type}
-                        </p>
-                      </div>
-                      <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold ml-2">
-                        Rs. {product.purchasePrice?.toLocaleString() || '0'}
-                      </div>
-                    </div>
-                    
-                    {product.colors && product.colors.length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-xs text-gray-600 mb-1">Available Colors:</p>
-                        <div className="flex gap-1 flex-wrap">
-                          {product.colors.slice(0, 3).map(color => (
-                            <div
-                              key={color._id}
-                              className="w-4 h-4 rounded-full border border-gray-300"
-                              style={{ backgroundColor: color.hexCode }}
-                              title={color.name}
-                            />
-                          ))}
-                          {product.colors.length > 3 && (
-                            <span className="text-xs text-gray-500">
-                              +{product.colors.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="mt-3 pt-2 border-t border-gray-100">
-                      <span className="text-xs text-green-600 font-medium">
-                        Click to select
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
-        )}
-
-        {isProductDropdownOpen && filteredProducts.length === 0 && productSearchTerm && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <p className="text-gray-500 text-center">
-              No products found for "<span className="font-medium">{productSearchTerm}</span>"
-            </p>
-          </div>
-        )}
-
-        {newPurchase.quantity && newPurchase.unitPrice && (
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <p className="font-medium text-blue-800">
-              Total: Rs. {(parseInt(newPurchase.quantity) * parseFloat(newPurchase.unitPrice)).toLocaleString()}
-            </p>
-          </div>
-        )}
-
-        <div className="mt-6 flex gap-3">
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2"
-          >
-            {submitting ? 'Saving...' : (editingPurchase ? 'Update' : 'Add')} Purchase
-          </button>
-          {editingPurchase && (
-            <button onClick={resetForm} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
-              Cancel
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Purchases Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Purchase History ({purchases.length} entries)
-          </h3>
-          <p className="text-sm text-gray-600">
-            Page {currentPage} of {totalPages}
-          </p>
+          <div>
+            <h3 className="text-xl font-bold text-gray-800">
+              Purchase History ({filteredPurchases.length})
+            </h3>
+            {globalSearch && (
+              <p className="text-sm text-gray-600 mt-1">
+                Showing results for: "{globalSearch}"
+              </p>
+            )}
+          </div>
+          <div className="text-sm text-gray-600">
+            Page {currentPage} of {totalPages} • Showing {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredPurchases.length)} of {filteredPurchases.length}
+          </div>
         </div>
 
-        {purchases.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-xl text-gray-500">No purchases found</p>
+        {filteredPurchases.length === 0 ? (
+          <div className="text-center py-20 text-gray-500">
+            <FileText size={64} className="mx-auto mb-4 text-gray-300" />
+            <p className="text-xl">No purchases found</p>
+            {globalSearch && (
+              <p className="text-gray-600">Try a different search term</p>
+            )}
           </div>
         ) : (
           <>
@@ -614,46 +885,66 @@ const Purchases = () => {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Color</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Product</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Code</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Supplier</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Color</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Qty</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Price</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Total</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {paginatedPurchases.map((purchase) => (
-                    <tr key={purchase._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        {new Date(purchase.date).toLocaleDateString()}
+                <tbody className="divide-y divide-gray-200">
+                  {currentPurchases.map(p => (
+                    <tr key={p._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm">
+                        {new Date(p.date).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 font-medium">
+                        {p.product?.name || '—'}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">{purchase.product?.name}</div>
-                        <div className="text-xs text-gray-500 uppercase">{purchase.product?.type}</div>
+                        <span className="font-mono bg-gray-100 px-3 py-1 rounded text-sm font-bold">
+                          {p.product?.code || '—'}
+                        </span>
                       </td>
+                      <td className="px-6 py-4">{p.supplier}</td>
                       <td className="px-6 py-4">
-                        {purchase.color ? (
+                        {p.color ? (
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full border" style={{ backgroundColor: purchase.color.hexCode }}></div>
-                            <span className="text-sm">{purchase.color.name}</span>
+                            <div 
+                              className="w-6 h-6 rounded-full border"
+                              style={{ backgroundColor: p.color.hexCode || '#ccc' }}
+                            ></div>
+                            <span className="text-sm">{p.color.codeName}</span>
                           </div>
                         ) : (
-                          <span className="text-gray-400 text-sm italic">No Color</span>
+                          <span className="text-gray-400 text-sm">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{purchase.supplier}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-gray-800">{purchase.quantity}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700">Rs. {purchase.unitPrice.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-green-600">Rs. {purchase.totalAmount.toLocaleString()}</td>
+                      <td className="px-6 py-4 font-bold text-center">{p.quantity}</td>
+                      <td className="px-6 py-4 text-blue-600">
+                        Rs. {p.unitPrice?.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 font-bold text-green-600">
+                        Rs. {p.totalAmount?.toLocaleString()}
+                      </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => editPurchase(purchase)} className="text-blue-600 hover:text-blue-800 p-2 rounded hover:bg-blue-50">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(p)}
+                            className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg"
+                            title="Edit"
+                          >
                             <Edit size={18} />
                           </button>
-                          <button onClick={() => deletePurchase(purchase._id)} className="text-red-600 hover:text-red-800 p-2 rounded hover:bg-red-50">
+                          <button
+                            onClick={() => handleDeletePurchase(p._id)}
+                            className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg"
+                            title="Delete"
+                          >
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -664,43 +955,58 @@ const Purchases = () => {
               </table>
             </div>
 
-            {/* Pagination */}
+            {/* PAGINATION */}
             {totalPages > 1 && (
               <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  Showing {startIndex + 1} to {Math.min(endIndex, purchases.length)} of {purchases.length}
-                </p>
+                <div className="text-sm text-gray-600">
+                  Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredPurchases.length)} of {filteredPurchases.length} purchases
+                </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => goToPage(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="px-5 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 flex items-center gap-2"
+                    className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 flex items-center gap-2"
                   >
+                    <ChevronLeft size={16} />
                     Previous
                   </button>
-
-                  <div className="flex gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                      <button
-                        key={page}
-                        onClick={() => goToPage(page)}
-                        className={`w-10 h-10 rounded-lg font-medium ${
-                          currentPage === page
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white border hover:bg-gray-100'
-                        }`}
-                      >
-                        {page}
-                      </button>
-                    ))}
+                  
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => goToPage(pageNum)}
+                          className={`px-3 py-1 rounded-lg ${
+                            currentPage === pageNum
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white border text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
                   </div>
-
+                  
                   <button
                     onClick={() => goToPage(currentPage + 1)}
                     disabled={currentPage === totalPages}
-                    className="px-5 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 flex items-center gap-2"
+                    className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 flex items-center gap-2"
                   >
                     Next
+                    <ChevronRight size={16} />
                   </button>
                 </div>
               </div>

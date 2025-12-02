@@ -1,13 +1,25 @@
-// components/Products.jsx - FINAL 100% WORKING WITH MULTI COLOR SELECT + SEARCH
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Search, Upload, Download, FileText, ChevronLeft, ChevronRight, Palette, X, Edit, Check } from 'lucide-react';
-import { productsAPI, colorsAPI } from './../../services/api';
+// components/Products.jsx - ENHANCED PAGINATION WITH NUMBERED PAGES
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Plus, Trash2, Search, Upload, Download, Edit, X, 
+  CheckCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight, 
+  FileText, ChevronFirst, ChevronLast, ListFilter
+} from 'lucide-react';
+import { productsAPI } from './../../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// Special upload with long timeout (1 minute)
+const uploadWithLongTimeout = (formData) => {
+  return productsAPI.uploadCSV(formData, {
+    timeout: 60000, 
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+};
+
 const Products = () => {
   const [products, setProducts] = useState([]);
-  const [colors, setColors] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -15,21 +27,25 @@ const Products = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [csvUploading, setCsvUploading] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedProductColors, setSelectedProductColors] = useState(null);
-  const [colorSearch, setColorSearch] = useState('');
 
-  const itemsPerPage = 10;
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [pageInput, setPageInput] = useState('');
+
+  // Filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [stockFilter, setStockFilter] = useState('all'); // 'all', 'in', 'low', 'out'
+
+  // Upload Modal
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState('');
 
   const [newProduct, setNewProduct] = useState({
-    name: '',
-    type: 'gallon',
-    purchasePrice: '',
-    salePrice: '',
-    discount: '0',
-    colors: []
+    name: '', type: 'gallon', purchasePrice: '', salePrice: '', discount: '0', qty: '', code: ''
   });
 
   const productTypes = [
@@ -37,55 +53,74 @@ const Products = () => {
     { value: 'dibbi', label: 'Dibbi' },
     { value: 'quarter', label: 'Quarter' },
     { value: 'p', label: 'P' },
-    { value: 'drum', label: 'Drum' }, // Added drum option
-    { value: 'other', label: 'Other' } 
+    { value: 'drum', label: 'Drum' },
+    { value: 'other', label: 'Other' }
   ];
+
+  const itemsPerPageOptions = [10, 20, 50, 100];
+
+  // Refs
+  const pageInputRef = useRef(null);
 
   useEffect(() => {
     fetchProducts();
-    fetchColors();
   }, []);
 
   const fetchProducts = async () => {
     try {
       setLoading(true);
       const response = await productsAPI.getAll();
-      setProducts(response.data.data || []);
-    } catch (error) {
-      setError('Failed to fetch products');
+      const productsData = response.data.data || [];
+      setProducts(productsData);
+      setFilteredProducts(productsData);
+    } catch (err) {
+      setError('Failed to load products');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchColors = async () => {
-    try {
-      const response = await colorsAPI.getAll();
-      setColors(response.data.data || []);
-    } catch (error) {
-      console.error('Error fetching colors:', error);
+  // Apply filters
+  useEffect(() => {
+    let filtered = [...products];
+    
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(p =>
+        p.name.toLowerCase().includes(term) ||
+        p.type.toLowerCase().includes(term) ||
+        (p.code && p.code.toLowerCase().includes(term))
+      );
     }
-  };
-
-  // Toggle color selection
-  const handleColorToggle = (colorId) => {
-    const currentColors = editingProduct ? editingProduct.colors : newProduct.colors;
-    const updatedColors = currentColors.includes(colorId)
-      ? currentColors.filter(id => id !== colorId)
-      : [...currentColors, colorId];
-
-    if (editingProduct) {
-      setEditingProduct({ ...editingProduct, colors: updatedColors });
-    } else {
-      setNewProduct({ ...newProduct, colors: updatedColors });
+    
+    // Type filter
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(p => p.type.toLowerCase() === typeFilter.toLowerCase());
     }
-  };
+    
+    // Stock filter (based on initial qty or inventory logic)
+    if (stockFilter !== 'all') {
+      // Note: This is a simple filter. For real stock, you'd need inventory data
+      if (stockFilter === 'in') {
+        filtered = filtered.filter(p => (p.initialStock || 0) > 10);
+      } else if (stockFilter === 'low') {
+        filtered = filtered.filter(p => (p.initialStock || 0) > 0 && (p.initialStock || 0) <= 10);
+      } else if (stockFilter === 'out') {
+        filtered = filtered.filter(p => (p.initialStock || 0) === 0);
+      }
+    }
+    
+    setFilteredProducts(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [searchTerm, typeFilter, stockFilter, products]);
 
   const addProduct = async () => {
-    if (!newProduct.name || !newProduct.purchasePrice || !newProduct.salePrice || newProduct.colors.length === 0) {
-      setError('Please fill all required fields');
+    if (!newProduct.name || !newProduct.purchasePrice || !newProduct.salePrice) {
+      setError('Name, Purchase Price, and Sale Price are required');
       return;
     }
+
     try {
       setSubmitting(true);
       await productsAPI.create({
@@ -93,23 +128,29 @@ const Products = () => {
         purchasePrice: parseFloat(newProduct.purchasePrice),
         salePrice: parseFloat(newProduct.salePrice),
         discount: parseFloat(newProduct.discount) || 0,
+        qty: newProduct.qty ? parseInt(newProduct.qty) : 0,
+        code: newProduct.code.trim() || undefined
       });
-      resetForm();
+
       setSuccess('Product added successfully!');
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => {
+        resetForm();
+        setSuccess('');
+      }, 1500);
       fetchProducts();
-    } catch (error) {
-      setError(error.response?.data?.message || 'Failed to add product');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to add product');
     } finally {
       setSubmitting(false);
     }
   };
 
   const updateProduct = async () => {
-    if (!editingProduct.name || !editingProduct.purchasePrice || !editingProduct.salePrice || editingProduct.colors.length === 0) {
-      setError('Please fill all required fields');
+    if (!editingProduct.name || !editingProduct.purchasePrice || !editingProduct.salePrice) {
+      setError('Name, Purchase Price, and Sale Price are required');
       return;
     }
+
     try {
       setSubmitting(true);
       await productsAPI.update(editingProduct._id, {
@@ -118,27 +159,29 @@ const Products = () => {
         purchasePrice: parseFloat(editingProduct.purchasePrice),
         salePrice: parseFloat(editingProduct.salePrice),
         discount: parseFloat(editingProduct.discount) || 0,
-        colors: editingProduct.colors
+        code: editingProduct.code?.trim() || null
       });
-      setEditingProduct(null);
       setSuccess('Product updated successfully!');
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => {
+        setEditingProduct(null);
+        setSuccess('');
+      }, 1500);
       fetchProducts();
-    } catch (error) {
-      setError(error.response?.data?.message || 'Failed to update product');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update');
     } finally {
       setSubmitting(false);
     }
   };
 
   const deleteProduct = async (id) => {
-    if (!window.confirm('Delete this product?')) return;
+    if (!window.confirm('Delete this product permanently?')) return;
     try {
       await productsAPI.delete(id);
-      setSuccess('Product deleted!');
-      setTimeout(() => setSuccess(''), 3000);
+      setSuccess('Product deleted');
+      setTimeout(() => setSuccess(''), 2000);
       fetchProducts();
-    } catch (error) {
+    } catch (err) {
       setError('Failed to delete');
     }
   };
@@ -148,44 +191,91 @@ const Products = () => {
       ...product,
       purchasePrice: product.purchasePrice.toString(),
       salePrice: product.salePrice.toString(),
-      discount: product.discount.toString(),
-      colors: product.colors.map(c => c._id)
+      discount: product.discount?.toString() || '0',
+      code: product.code || ''
     });
     setShowForm(true);
-    setColorSearch('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const resetForm = () => {
-    setNewProduct({ name: '', type: 'gallon', purchasePrice: '', salePrice: '', discount: '0', colors: [] });
+    setNewProduct({ name: '', type: 'gallon', purchasePrice: '', salePrice: '', discount: '0', qty: '', code: '' });
     setEditingProduct(null);
     setShowForm(false);
-    setColorSearch('');
   };
 
+  const resetFilters = () => {
+    setSearchTerm('');
+    setTypeFilter('all');
+    setStockFilter('all');
+    setShowFilters(false);
+  };
+
+  // UPLOAD CSV — FIXED TIMEOUT
   const handleCsvUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file || (!file.name.endsWith('.csv') && file.type !== 'text/csv')) {
-      setError('Please upload a CSV file');
-      return;
-    }
+    if (!file) return;
+
+    setUploadStatus('uploading');
+    setUploadProgress(20);
+    setUploadMessage('Uploading your file...');
+    setShowUploadModal(true);
+
+    const formData = new FormData();
+    formData.append('csvFile', file);
+
     try {
-      setCsvUploading(true);
-      const formData = new FormData();
-      formData.append('csvFile', file);
-      const res = await productsAPI.uploadCSV(formData);
-      setSuccess(`Imported ${res.data.summary.imported} products!`);
-      setShowUploadModal(false);
+      setUploadProgress(40);
+      setUploadMessage('Sending to server...');
+
+      const res = await uploadWithLongTimeout(formData);
+
+      setUploadProgress(80);
+      setUploadMessage('Saving products...');
+
+      const imported = res.data.imported || 0;
+
+      setUploadProgress(100);
+      setUploadStatus('success');
+      setUploadMessage(`Successfully imported ${imported} products!`);
+
+      // Refresh list
       fetchProducts();
-    } catch (error) {
-      setError(error.response?.data?.message || 'Upload failed');
+
+      setTimeout(() => {
+        setShowUploadModal(false);
+        setUploadStatus('idle');
+        setUploadProgress(0);
+        setUploadMessage('');
+        setSuccess(`Successfully imported ${imported} products!`);
+      }, 2000);
+
+    } catch (err) {
+      console.error('Upload error:', err);
+
+      let msg = 'Upload failed';
+      if (err.code === 'ECONNABORTED' || err.message?.response?.status === 504) {
+        msg = 'Upload took too long, but products may have been imported. Refresh to check.';
+      } else if (err.response?.data?.message) {
+        msg = err.response.data.message;
+      }
+
+      setUploadStatus('error');
+      setUploadMessage(msg);
+      setUploadProgress(0);
+
+      // Still try to refresh in case it worked
+      setTimeout(() => fetchProducts(), 30000);
     } finally {
-      setCsvUploading(false);
       e.target.value = '';
     }
   };
 
   const downloadTemplate = () => {
-    const csv = "name,type,purchasePrice,salePrice,discount,colors\nNippon Enamel,gallon,2500,3200,5,White,Black,Red\nBerger Silk,dibbi,900,1200,0,Blue,Green\nSpecial Product,drum,1500,2000,10,Yellow,Orange"; // Updated example with drum
+    const csv = `name,type,purchasePrice,salePrice,discount,qty,code
+Nippon Spot-less Q,quarter,19172490,1821400,18,50,NIP-Q
+Nippon Spot-less G,gallon,68928950,1821400,18,100,NIP-G
+Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -195,78 +285,153 @@ const Products = () => {
     URL.revokeObjectURL(url);
   };
 
-  const exportToCSV = () => {
-    const headers = ['Name', 'Type', 'Purchase', 'Sale', 'Discount (%)', 'Profit', 'Colors'];
-    const rows = filteredProducts.map(p => [
-      p.name,
-      p.type.toUpperCase(),
-      p.purchasePrice,
-      p.salePrice,
-      p.discount,
-      (p.salePrice * (1 - p.discount / 100) - p.purchasePrice).toFixed(2),
-      p.colors?.map(c => `${c.name} (${c.codeName})`).join(' | ') || ''
-    ]);
-    let csv = headers.join(',') + '\n' + rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `products_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // PAGINATION CALCULATIONS
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, filteredProducts.length);
+  const currentProducts = filteredProducts.slice(startIndex, endIndex);
+
+  // PAGINATION FUNCTIONS
+  const goToPage = (page) => {
+    const pageNum = Math.max(1, Math.min(page, totalPages));
+    setCurrentPage(pageNum);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const exportToPDF = () => {
+  const goToFirstPage = () => goToPage(1);
+  const goToLastPage = () => goToPage(totalPages);
+  const goToNextPage = () => goToPage(currentPage + 1);
+  const goToPrevPage = () => goToPage(currentPage - 1);
+
+  const handlePageInput = (e) => {
+    if (e.key === 'Enter') {
+      const pageNum = parseInt(pageInput);
+      if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+        goToPage(pageNum);
+        setPageInput('');
+      }
+    }
+  };
+
+  const handlePageInputBlur = () => {
+    if (pageInput) {
+      const pageNum = parseInt(pageInput);
+      if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+        goToPage(pageNum);
+      }
+      setPageInput('');
+    }
+  };
+
+  // Generate page numbers for display
+  const getPageNumbers = () => {
+    const pageNumbers = [];
+    const maxVisiblePages = 5;
+    
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      let startPage = Math.max(1, currentPage - 2);
+      let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+      
+      if (endPage - startPage + 1 < maxVisiblePages) {
+        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+      }
+    }
+    
+    return pageNumbers;
+  };
+
+  // DOWNLOAD FILTERED PDF
+  const downloadFilteredPDF = () => {
     const doc = new jsPDF('l', 'mm', 'a4');
-    doc.setFontSize(20);
-    doc.text('ALWAQAS PAINT SHOP - Products Report', 14, 20);
+    doc.setFontSize(22);
+    doc.text('AL WAQAS PAINT AND HARDWARE SHOP', 148, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text('www.alwaqaspaint.com', 148, 28, { align: 'center' });
+    
+    let title = 'PRODUCT LIST';
+    if (searchTerm || typeFilter !== 'all' || stockFilter !== 'all') {
+      title = 'PRODUCT LIST (FILTERED)';
+    }
+    
+    doc.setFontSize(16);
+    doc.text(title, 148, 40, { align: 'center' });
     doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Generated: ${new Date().toLocaleString()} • Total: ${filteredProducts.length} products`, 14, 50);
+    
+    if (searchTerm) {
+      doc.text(`Search: "${searchTerm}"`, 14, 56);
+    }
+    if (typeFilter !== 'all') {
+      doc.text(`Type: ${typeFilter}`, 14, 62);
+    }
 
     const tableData = filteredProducts.map(p => [
       p.name,
       p.type.toUpperCase(),
-      `Rs. ${p.purchasePrice}`,
-      `Rs. ${p.salePrice}`,
+      p.code || '—',
+      `Rs. ${p.purchasePrice.toLocaleString()}`,
+      `Rs. ${p.salePrice.toLocaleString()}`,
       `${p.discount}%`,
-      `Rs. ${(p.salePrice * (1 - p.discount / 100) - p.purchasePrice).toFixed(2)}`,
-      p.colors?.map(c => c.name).join(', ') || '—'
+      `Rs. ${((p.salePrice * (1 - p.discount/100)) - p.purchasePrice).toLocaleString()}`
     ]);
 
     autoTable(doc, {
-      head: [['Product', 'Type', 'Purchase', 'Sale', 'Discount', 'Profit', 'Colors']],
+      head: [['Product Name', 'Type', 'Code', 'Purchase', 'Sale', 'Discount', 'Profit']],
       body: tableData,
-      startY: 40,
-      styles: { fontSize: 9, cellPadding: 4 },
-      headStyles: { fillColor: [30, 64, 175], textColor: 255 },
-      alternateRowStyles: { fillColor: [249, 250, 251] },
-      columnStyles: { 6: { cellWidth: 60 } }
+      startY: 70,
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+      alternateRowStyles: { fillColor: [245, 250, 255] }
     });
 
-    doc.save(`products_report_${new Date().toISOString().slice(0,10)}.pdf`);
+    const filename = searchTerm || typeFilter !== 'all' || stockFilter !== 'all' 
+      ? `products_filtered_${new Date().toISOString().slice(0,10)}.pdf`
+      : `all_products_${new Date().toISOString().slice(0,10)}.pdf`;
+    
+    doc.save(filename);
   };
 
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.colors?.some(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // DOWNLOAD ALL PDF
+  const downloadAllPDF = () => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    doc.setFontSize(22);
+    doc.text('AL WAQAS PAINT AND HARDWARE SHOP', 148, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text('www.alwaqaspaint.com', 148, 28, { align: 'center' });
+    doc.setFontSize(16);
+    doc.text('COMPLETE PRODUCT CATALOG', 148, 40, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()} • Total: ${products.length} products`, 14, 50);
 
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+    const tableData = products.map(p => [
+      p.name,
+      p.type.toUpperCase(),
+      p.code || '—',
+      `Rs. ${p.purchasePrice.toLocaleString()}`,
+      `Rs. ${p.salePrice.toLocaleString()}`,
+      `${p.discount}%`,
+      `Rs. ${((p.salePrice * (1 - p.discount/100)) - p.purchasePrice).toLocaleString()}`
+    ]);
 
-  const calculateProfit = (p, s, d = 0) => (s * (1 - d / 100) - p).toFixed(2);
+    autoTable(doc, {
+      head: [['Product Name', 'Type', 'Code', 'Purchase', 'Sale', 'Discount', 'Profit']],
+      body: tableData,
+      startY: 60,
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+      alternateRowStyles: { fillColor: [245, 250, 255] }
+    });
 
-  // Filter colors with search
-  const filteredColorsForSelection = colors.filter(color =>
-    color.name.toLowerCase().includes(colorSearch.toLowerCase()) ||
-    color.codeName.toLowerCase().includes(colorSearch.toLowerCase())
-  );
-
-  const selectedColors = editingProduct ? editingProduct.colors : newProduct.colors;
+    doc.save(`all_products_${new Date().toISOString().slice(0,10)}.pdf`);
+  };
 
   if (loading) {
     return (
@@ -274,7 +439,7 @@ const Products = () => {
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-64 mb-6"></div>
           <div className="space-y-4">
-            {[...Array(8)].map((_, i) => (
+            {[...Array(6)].map((_, i) => (
               <div key={i} className="h-20 bg-gray-200 rounded"></div>
             ))}
           </div>
@@ -285,15 +450,14 @@ const Products = () => {
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Products Management</h1>
-        <div className="flex gap-3">
-          <button onClick={exportToCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
-            <Download size={18} /> CSV
+        <h1 className="text-3xl font-bold text-gray-800">Products</h1>
+        <div className="flex gap-3 flex-wrap">
+          <button onClick={downloadFilteredPDF} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
+            <Download size={18} /> Filtered PDF
           </button>
-          <button onClick={exportToPDF} className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
-            <FileText size={18} /> PDF
+          <button onClick={downloadAllPDF} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
+            <Download size={18} /> All Products PDF
           </button>
           <button onClick={() => setShowUploadModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
             <Upload size={18} /> Upload CSV
@@ -304,116 +468,215 @@ const Products = () => {
         </div>
       </div>
 
-      {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">{success}</div>}
-      {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
-
-      {/* Search */}
-      <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder="Search by name, type, or color..."
-            value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {success && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 flex items-center gap-2">
+          <CheckCircle size={20} /> {success}
         </div>
+      )}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 flex items-center gap-2">
+          <AlertCircle size={20} /> {error}
+        </div>
+      )}
+
+      {/* Search and Filters */}
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder="Search by name, type, or code..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-2"
+          >
+            <ListFilter size={18} />
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </button>
+          {(searchTerm || typeFilter !== 'all' || stockFilter !== 'all') && (
+            <button
+              onClick={resetFilters}
+              className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg"
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
+
+        {/* Advanced Filters */}
+        {showFilters && (
+          <div className="mt-6 p-6 bg-gray-50 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div>
+                <label className="block font-medium mb-2">Product Type</label>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="w-full px-4 py-3 border rounded-lg"
+                >
+                  <option value="all">All Types</option>
+                  {productTypes.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block font-medium mb-2">Items Per Page</label>
+                <select
+                  value={itemsPerPage}
+                  onChange={(e) => {
+                    setItemsPerPage(parseInt(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-4 py-3 border rounded-lg"
+                >
+                  {itemsPerPageOptions.map(option => (
+                    <option key={option} value={option}>{option} items</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Form */}
       {showForm && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">{editingProduct ? 'Edit Product' : 'Add New Product'}</h2>
+          <h2 className="text-2xl font-bold mb-6">{editingProduct ? 'Edit Product' : 'Add New Product'}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Product Name *</label>
-              <input type="text" value={editingProduct ? editingProduct.name : newProduct.name} onChange={e => editingProduct ? setEditingProduct({ ...editingProduct, name: e.target.value }) : setNewProduct({ ...newProduct, name: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Nippon Q Enamel" />
+              <label className="block font-medium mb-2">Product Name *</label>
+              <input 
+                value={editingProduct?.name || newProduct.name} 
+                onChange={e => editingProduct ? setEditingProduct({...editingProduct, name: e.target.value}) : setNewProduct({...newProduct, name: e.target.value})} 
+                className="w-full px-4 py-3 border rounded-lg" 
+                placeholder="Nippon Enamel" 
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
-              <select value={editingProduct ? editingProduct.type : newProduct.type} onChange={e => editingProduct ? setEditingProduct({ ...editingProduct, type: e.target.value }) : setNewProduct({ ...newProduct, type: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <label className="block font-medium mb-2">Type *</label>
+              <select 
+                value={editingProduct?.type || newProduct.type} 
+                onChange={e => editingProduct ? setEditingProduct({...editingProduct, type: e.target.value}) : setNewProduct({...newProduct, type: e.target.value})} 
+                className="w-full px-4 py-3 border rounded-lg"
+              >
                 {productTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
-            <div className="md:col-span-2 lg:col-span-3">
-              <label className="block text-sm font-medium text-gray-700 mb-3">Colors *</label>
-              {/* Color Search */}
-              <div className="mb-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    placeholder="Search colors..."
-                    value={colorSearch}
-                    onChange={e => setColorSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+            <div>
+              <label className="block font-medium mb-2">Code (Optional)</label>
+              <input 
+                value={editingProduct?.code || newProduct.code} 
+                onChange={e => editingProduct ? setEditingProduct({...editingProduct, code: e.target.value}) : setNewProduct({...newProduct, code: e.target.value})} 
+                className="w-full px-4 py-3 border rounded-lg" 
+                placeholder="NIP-001" 
+              />
+            </div>
+            <div>
+              <label className="block font-medium mb-2">Purchase Price *</label>
+              <input 
+                type="number" 
+                value={editingProduct?.purchasePrice || newProduct.purchasePrice} 
+                onChange={e => editingProduct ? setEditingProduct({...editingProduct, purchasePrice: e.target.value}) : setNewProduct({...newProduct, purchasePrice: e.target.value})} 
+                className="w-full px-4 py-3 border rounded-lg" 
+                placeholder="2500" 
+              />
+            </div>
+            <div>
+              <label className="block font-medium mb-2">Sale Price *</label>
+              <input 
+                type="number" 
+                value={editingProduct?.salePrice || newProduct.salePrice} 
+                onChange={e => editingProduct ? setEditingProduct({...editingProduct, salePrice: e.target.value}) : setNewProduct({...newProduct, salePrice: e.target.value})} 
+                className="w-full px-4 py-3 border rounded-lg" 
+                placeholder="3200" 
+              />
+            </div>
+            <div>
+              <label className="block font-medium mb-2">Discount (%)</label>
+              <input 
+                type="number" 
+                min="0" 
+                max="100" 
+                value={editingProduct?.discount || newProduct.discount} 
+                onChange={e => editingProduct ? setEditingProduct({...editingProduct, discount: e.target.value}) : setNewProduct({...newProduct, discount: e.target.value})} 
+                className="w-full px-4 py-3 border rounded-lg" 
+                placeholder="0" 
+              />
+            </div>
+            {!editingProduct && (
+              <div>
+                <label className="block font-medium mb-2">Initial Qty (Optional)</label>
+                <input 
+                  type="number" 
+                  value={newProduct.qty} 
+                  onChange={e => setNewProduct({...newProduct, qty: e.target.value})} 
+                  className="w-full px-4 py-3 border rounded-lg" 
+                  placeholder="50" 
+                />
+                <p className="text-xs text-gray-500 mt-1">Stock will be added as "Initial Stock"</p>
               </div>
-              <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-3 max-h-64 overflow-y-auto p-4 bg-gray-50 rounded-lg border">
-                {filteredColorsForSelection.map(color => {
-                  const isSelected = selectedColors.includes(color._id);
-                  return (
-                    <div
-                      key={color._id}
-                      onClick={() => handleColorToggle(color._id)}
-                      className={`relative flex flex-col items-center p-3 bg-white rounded-lg shadow cursor-pointer transition-all transform hover:scale-105 ${
-                        isSelected ? 'ring-4 ring-blue-500 shadow-xl' : 'hover:shadow-md'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1">
-                          <Check size={16} />
-                        </div>
-                      )}
-                      <div className="w-12 h-12 rounded-full border-4 border-white shadow-lg mb-2" style={{ backgroundColor: color.hexCode }}></div>
-                      <span className="text-xs font-bold text-gray-700">{color.codeName}</span>
-                      <span className="text-xs text-gray-500">{color.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-sm font-medium text-gray-700">
-                Selected: <span className="text-blue-600 font-bold">{selectedColors.length}</span> colors
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Purchase Price *</label>
-              <input type="number" value={editingProduct ? editingProduct.purchasePrice : newProduct.purchasePrice} onChange={e => editingProduct ? setEditingProduct({ ...editingProduct, purchasePrice: e.target.value }) : setNewProduct({ ...newProduct, purchasePrice: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="2500" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sale Price *</label>
-              <input type="number" value={editingProduct ? editingProduct.salePrice : newProduct.salePrice} onChange={e => editingProduct ? setEditingProduct({ ...editingProduct, salePrice: e.target.value }) : setNewProduct({ ...newProduct, salePrice: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="3200" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Discount (%)</label>
-              <input type="number" min="0" max="100" value={editingProduct ? editingProduct.discount : newProduct.discount} onChange={e => editingProduct ? setEditingProduct({ ...editingProduct, discount: e.target.value }) : setNewProduct({ ...newProduct, discount: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0" />
-            </div>
+            )}
           </div>
-          <div className="mt-6 flex gap-3">
-            <button onClick={editingProduct ? updateProduct : addProduct} disabled={submitting} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium">
+          <div className="mt-8 flex gap-4">
+            <button 
+              onClick={editingProduct ? updateProduct : addProduct} 
+              disabled={submitting} 
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2"
+            >
+              {submitting && <Loader2 size={20} className="animate-spin" />}
               {submitting ? 'Saving...' : (editingProduct ? 'Update Product' : 'Add Product')}
             </button>
-            <button onClick={resetForm} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium">
+            <button 
+              onClick={resetForm} 
+              className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg"
+            >
               Cancel
             </button>
           </div>
         </div>
       )}
 
-      {/* Products Table */}
-      <div className="bg-white rounded-lg shadow-md">
-        <div className="px-6 py-4 bg-gray-50 border-b">
-          <h3 className="text-lg font-semibold text-gray-900">All Products ({filteredProducts.length})</h3>
+      {/* Products Table with Enhanced Pagination */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div className="px-6 py-4 bg-gray-50 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-semibold">
+              {searchTerm ? `Search Results (${filteredProducts.length})` : `All Products (${products.length})`}
+            </h3>
+            {(searchTerm || typeFilter !== 'all') && (
+              <p className="text-sm text-gray-600 mt-1">
+                {searchTerm && `Searching: "${searchTerm}"`}
+                {searchTerm && typeFilter !== 'all' && ' • '}
+                {typeFilter !== 'all' && `Type: ${typeFilter}`}
+              </p>
+            )}
+          </div>
+          <div className="text-sm text-gray-600 text-right">
+            <div>Page {currentPage} of {totalPages}</div>
+            <div>Showing {startIndex + 1}-{endIndex} of {filteredProducts.length} products</div>
+          </div>
         </div>
 
-        {paginatedProducts.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-gray-400 mb-4">
-              <Search size={48} className="mx-auto" />
-            </div>
-            <p className="text-gray-500 text-lg">No products found</p>
+        {currentProducts.length === 0 ? (
+          <div className="text-center py-20 text-gray-500">
+            <p className="text-xl mb-2">No products found</p>
+            {(searchTerm || typeFilter !== 'all') && (
+              <button
+                onClick={resetFilters}
+                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Reset Filters
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -421,49 +684,53 @@ const Products = () => {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Colors</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purchase</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sale</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Discount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profit</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Purchase</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sale</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Discount</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Profit</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {paginatedProducts.map(product => (
-                    <tr key={product._id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                          {product.type}
+                <tbody className="divide-y divide-gray-200">
+                  {currentProducts.map(p => (
+                    <tr key={p._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 font-medium">{p.name}</td>
+                      <td className="px-6 py-4">
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                          {p.type}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button
-                          onClick={() => setSelectedProductColors(product)}
-                          className="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                      <td className="px-6 py-4 text-sm font-mono">
+                        {p.code || '—'}
+                      </td>
+                      <td className="px-6 py-4">
+                        Rs. {p.purchasePrice.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 font-bold">
+                        Rs. {p.salePrice.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4">{p.discount}%</td>
+                      <td className="px-6 py-4 font-bold text-green-600">
+                        Rs. {((p.salePrice * (1 - p.discount/100)) - p.purchasePrice).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <button 
+                          onClick={() => startEditing(p)} 
+                          className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          title="Edit"
                         >
-                          <Palette size={16} />
-                          {product.colors?.length || 0} Colors
+                          <Edit size={18} />
                         </button>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Rs. {product.purchasePrice}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Rs. {product.salePrice}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.discount}%</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
-                        Rs. {calculateProfit(product.purchasePrice, product.salePrice, product.discount)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => startEditing(product)} className="text-indigo-600 hover:text-indigo-900">
-                            <Edit size={18} />
-                          </button>
-                          <button onClick={() => deleteProduct(product._id)} className="text-red-600 hover:text-red-900">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
+                        <button 
+                          onClick={() => deleteProduct(p._id)} 
+                          className="text-red-600 hover:text-red-900"
+                          title="Delete"
+                        >
+                          <Trash2 size={18} />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -471,27 +738,108 @@ const Products = () => {
               </table>
             </div>
 
-            {/* Pagination */}
+            {/* ENHANCED PAGINATION */}
             {totalPages > 1 && (
-              <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length} products
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    Next
-                  </button>
+              <div className="px-6 py-4 bg-gray-50 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="text-sm text-gray-600">
+                  Showing {startIndex + 1} to {endIndex} of {filteredProducts.length} products
+                </div>
+                
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  {/* Items per page selector */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Show:</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(parseInt(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="px-3 py-1 border rounded-lg text-sm"
+                    >
+                      {itemsPerPageOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm text-gray-600">per page</span>
+                  </div>
+                  
+                  {/* Page navigation */}
+                  <div className="flex items-center gap-2">
+                    {/* First page button */}
+                    <button
+                      onClick={goToFirstPage}
+                      disabled={currentPage === 1}
+                      className="p-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="First page"
+                    >
+                      <ChevronFirst size={16} />
+                    </button>
+                    
+                    {/* Previous page button */}
+                    <button
+                      onClick={goToPrevPage}
+                      disabled={currentPage === 1}
+                      className="p-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      <ChevronLeft size={16} />
+                      <span className="hidden sm:inline">Prev</span>
+                    </button>
+                    
+                    {/* Page numbers */}
+                    <div className="flex items-center gap-1">
+                      {getPageNumbers().map(page => (
+                        <button
+                          key={page}
+                          onClick={() => goToPage(page)}
+                          className={`px-3 py-1 rounded-lg min-w-[40px] ${
+                            currentPage === page
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white border text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Go to page input */}
+                    <div className="flex items-center gap-1">
+                      <input
+                        ref={pageInputRef}
+                        type="number"
+                        min="1"
+                        max={totalPages}
+                        value={pageInput}
+                        onChange={(e) => setPageInput(e.target.value)}
+                        onKeyPress={handlePageInput}
+                        onBlur={handlePageInputBlur}
+                        placeholder="Page"
+                        className="w-20 px-3 py-1 border rounded-lg text-center text-sm"
+                      />
+                      <span className="text-sm text-gray-600">of {totalPages}</span>
+                    </div>
+                    
+                    {/* Next page button */}
+                    <button
+                      onClick={goToNextPage}
+                      disabled={currentPage === totalPages}
+                      className="p-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      <span className="hidden sm:inline">Next</span>
+                      <ChevronRight size={16} />
+                    </button>
+                    
+                    {/* Last page button */}
+                    <button
+                      onClick={goToLastPage}
+                      disabled={currentPage === totalPages}
+                      className="p-2 bg-white border rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Last page"
+                    >
+                      <ChevronLast size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -499,57 +847,72 @@ const Products = () => {
         )}
       </div>
 
-      {/* Colors Modal */}
-      {selectedProductColors && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-screen overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-gray-800">
-                {selectedProductColors.name} - All Colors ({selectedProductColors.colors?.length || 0})
-              </h2>
-              <button onClick={() => setSelectedProductColors(null)} className="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100">
-                <X size={28} />
-              </button>
-            </div>
-            <div className="p-8">
-              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
-                {selectedProductColors.colors?.map(color => (
-                  <div key={color._id} className="flex flex-col items-center p-6 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl shadow-lg hover:shadow-2xl transition transform hover:scale-105">
-                    <div className="w-24 h-24 rounded-full border-8 border-white shadow-2xl mb-4" style={{ backgroundColor: color.hexCode }}></div>
-                    <div className="text-center">
-                      <div className="font-bold text-lg text-gray-800">{color.codeName}</div>
-                      <div className="text-sm text-gray-600 mt-1">{color.name}</div>
-                      <div className="text-xs font-mono text-gray-500 mt-2 bg-white px-3 py-1 rounded-full">{color.hexCode}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Upload Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8">
-            <h3 className="text-2xl font-bold mb-6">Upload Products CSV</h3>
-            <div className="border-4 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 transition">
-              <FileText size={64} className="mx-auto text-gray-400 mb-4" />
-              <p className="text-lg text-gray-600 mb-4">Drop your CSV file here or click to browse</p>
-              <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" id="csv-input" />
-              <label htmlFor="csv-input" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl cursor-pointer text-lg font-bold inline-block">
-                {csvUploading ? 'Uploading...' : 'Choose File'}
-              </label>
-            </div>
-            <div className="mt-6 flex justify-end gap-4">
-              <button onClick={downloadTemplate} className="text-blue-600 hover:text-blue-800 font-bold">
-                Download Template
-              </button>
-              <button onClick={() => setShowUploadModal(false)} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold">
-                Cancel
-              </button>
-            </div>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+            <h3 className="text-2xl font-bold text-center mb-8">Upload Products CSV</h3>
+
+            {uploadStatus === 'idle' && (
+              <div className="space-y-6">
+                <div className="border-4 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 transition cursor-pointer">
+                  <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" id="csv-upload" />
+                  <label htmlFor="csv-upload">
+                    <FileText size={64} className="mx-auto text-gray-400 mb-4" />
+                    <p className="text-xl font-bold text-blue-600">Click to upload CSV</p>
+                    <p className="text-sm text-gray-500 mt-2">or drag and drop</p>
+                  </label>
+                </div>
+                <div className="flex justify-between">
+                  <button onClick={downloadTemplate} className="text-blue-600 font-bold hover:underline">Download Template</button>
+                  <button onClick={() => setShowUploadModal(false)} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {(uploadStatus === 'uploading' || uploadStatus === 'processing') && (
+              <div className="text-center space-y-6">
+                <Loader2 size={64} className="mx-auto animate-spin text-blue-600" />
+                <div>
+                  <p className="text-xl font-semibold text-gray-700">{uploadMessage}</p>
+                  <div className="mt-4 bg-gray-200 rounded-full h-4 overflow-hidden">
+                    <div className="bg-blue-600 h-full transition-all duration-500" style={{ width: `${uploadProgress}%` }}></div>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-2">{uploadProgress}%</p>
+                </div>
+              </div>
+            )}
+
+            {uploadStatus === 'success' && (
+              <div className="text-center space-y-6">
+                <CheckCircle size={80} className="mx-auto text-green-500" />
+                <p className="text-2xl font-bold text-green-600">{uploadMessage}</p>
+              </div>
+            )}
+
+            {uploadStatus === 'error' && (
+              <div className="text-center space-y-6">
+                <AlertCircle size={80} className="mx-auto text-red-500" />
+                <p className="text-xl font-bold text-red-600">Upload Failed</p>
+                <p className="text-gray-600">{uploadMessage}</p>
+                <p className="text-sm text-orange-600 mt-4">
+                  If products appear after refresh → upload was successful!
+                </p>
+              </div>
+            )}
+
+            {(uploadStatus === 'success' || uploadStatus === 'error') && (
+              <div className="mt-8 text-center">
+                <button onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadStatus('idle');
+                  setUploadProgress(0);
+                  setUploadMessage('');
+                }} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold">
+                  Close
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
