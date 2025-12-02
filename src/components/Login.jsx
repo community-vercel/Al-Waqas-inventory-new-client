@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Loader, AlertCircle, CheckCircle } from 'lucide-react';
 
 const Login = () => {
-  const [email, setEmail] = useState('superadmin@inventory.alwaqaspaint.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
