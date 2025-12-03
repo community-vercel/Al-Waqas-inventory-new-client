@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { TrendingUp, TrendingDown, Package, AlertTriangle, DollarSign, Calendar, ShoppingCart, CreditCard } from 'lucide-react';
 import { salesAPI, purchasesAPI, inventoryAPI } from './../../services/api';
-
+import { useLocation } from 'react-router-dom'; // ← ADD THIS AT TOP
 const DashboardStats = () => {
   const [stats, setStats] = useState({
     todaySales: 0,
@@ -20,72 +20,75 @@ const DashboardStats = () => {
     totalItemsInStock: 0
   });
   const [loading, setLoading] = useState(true);
+const location = useLocation();
+useEffect(() => {
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        setLoading(true);
+      const [
+        todaySalesRes,
+        todayPurchasesRes,
+        weekSalesRes,
+        weekPurchasesRes,
+        monthSalesRes,
+        monthPurchasesRes,
+        yearSalesRes,
+        yearPurchasesRes,
+        lowStockRes,
+        inventoryRes
+      ] = await Promise.all([
+        salesAPI.getAll({ period: 'day' }),
+        purchasesAPI.getAll({ period: 'day' }),
+        salesAPI.getAll({ period: 'week' }),
+        purchasesAPI.getAll({ period: 'week' }),
+        salesAPI.getAll({ period: 'month' }),
+        purchasesAPI.getAll({ period: 'month' }),
+        salesAPI.getAll({ period: 'year' }),
+        purchasesAPI.getAll({ period: 'year' }),
+        inventoryAPI.getLowStock(),
+        inventoryAPI.getAll()
+      ]);
 
-        const [
-          todaySalesRes,
-          todayPurchasesRes,
-          weekSalesRes,
-          weekPurchasesRes,
-          monthSalesRes,
-          monthPurchasesRes,
-          yearSalesRes,
-          yearPurchasesRes,
-          lowStockRes,
-          inventoryRes
-        ] = await Promise.all([
-          salesAPI.getAll({ period: 'day' }),
-          purchasesAPI.getAll({ period: 'day' }),
-          salesAPI.getAll({ period: 'week' }),
-          purchasesAPI.getAll({ period: 'week' }),
-          salesAPI.getAll({ period: 'month' }),
-          purchasesAPI.getAll({ period: 'month' }),
-          salesAPI.getAll({ period: 'year' }),
-          purchasesAPI.getAll({ period: 'year' }),
-          inventoryAPI.getLowStock(),
-          inventoryAPI.getAll()
-        ]);
+      const calcTotal = (res) => res.data.data?.reduce((sum, item) => sum + (item.totalAmount || item.amount || 0), 0) || 0;
 
-        const calcTotal = (res) => res.data.data?.reduce((sum, item) => sum + (item.totalAmount || item.amount || 0), 0) || 0;
+      const todaySales = calcTotal(todaySalesRes);
+      const todayPurchases = calcTotal(todayPurchasesRes);
+      const weekSales = calcTotal(weekSalesRes);
+      const weekPurchases = calcTotal(weekPurchasesRes);
+      const monthSales = calcTotal(monthSalesRes);
+      const monthPurchases = calcTotal(monthPurchasesRes);
+      const yearSales = calcTotal(yearSalesRes);
+      const yearPurchases = calcTotal(yearPurchasesRes);
 
-        const todaySales = calcTotal(todaySalesRes);
-        const todayPurchases = calcTotal(todayPurchasesRes);
-        const weekSales = calcTotal(weekSalesRes);
-        const weekPurchases = calcTotal(weekPurchasesRes);
-        const monthSales = calcTotal(monthSalesRes);
-        const monthPurchases = calcTotal(monthPurchasesRes);
-        const yearSales = calcTotal(yearSalesRes);
-        const yearPurchases = calcTotal(yearPurchasesRes);
+      setStats({
+        todaySales,
+        todayPurchases,
+        weekSales,
+        weekPurchases,
+        monthSales,
+        monthPurchases,
+        yearSales,
+        yearPurchases,
+        totalRevenue: yearSales,
+        totalProfit: yearSales - yearPurchases,
+        lowStock: lowStockRes.data.count || 0,
+        totalItemsInStock: inventoryRes.data.data?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0
+      });
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        setStats({
-          todaySales,
-          todayPurchases,
-          weekSales,
-          weekPurchases,
-          monthSales,
-          monthPurchases,
-          yearSales,
-          yearPurchases,
-          totalRevenue: yearSales,
-          totalProfit: yearSales - yearPurchases,
-          lowStock: lowStockRes.data.count || 0,
-          totalItemsInStock: inventoryRes.data.data?.reduce((sum, item) => sum + item.quantity, 0) || 0
-        });
-      } catch (error) {
-        console.error('Failed to load stats:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  fetchStats();
 
-    fetchStats();
-    const interval = setInterval(fetchStats, 60000);
-    return () => clearInterval(interval);
-  }, []);
+  // Keep auto-refresh every minute
+  const interval = setInterval(fetchStats, 60000);
+  return () => clearInterval(interval);
+
+}, [location.pathname]);
 
   // Chart Data
   const performanceData = [

@@ -6,7 +6,7 @@ const API_URL = import.meta.env.VITE_APP_API_URL || 'https://al-waqas-inventory-
 // Create axios instance
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 900000,
 });
 
 // Add token to requests

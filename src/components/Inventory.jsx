@@ -1,9 +1,9 @@
-// components/Inventory.jsx - UPDATED WITH FILTERS + PRINT OPTIONS
+// components/Inventory.jsx - UPDATED WITH ACCURATE STOCK DATA
 import React, { useState, useEffect } from 'react';
 import { 
   Package, AlertTriangle, TrendingUp, TrendingDown, Search, 
   ChevronLeft, ChevronRight, Filter, Printer, Download,
-  CheckCircle, X
+  CheckCircle, X, RefreshCw
 } from 'lucide-react';
 import { inventoryAPI } from './../../services/api';
 import jsPDF from 'jspdf';
@@ -46,14 +46,34 @@ const Inventory = () => {
   const fetchInventory = async () => {
     try {
       setLoading(true);
+      setError('');
       const response = await inventoryAPI.getAll();
-      const data = response.data.data || [];
-
-      // SHOW ALL PRODUCTS — EVEN IF QTY = 0
-      setInventory(data);
-      applyFilters(data, searchTerm, stockFilter, typeFilter, minStockFilter);
+      
+      // Log for debugging
+      console.log('API Response:', response.data);
+      
+      // Get the actual inventory data
+      const apiData = response.data?.data || [];
+      
+      // FILTER OUT VIRTUAL ITEMS - Only show real inventory entries
+      const realInventory = apiData.filter(item => {
+        // Exclude virtual items created by backend
+        const isVirtual = item._id?.startsWith('virtual-') || item.isVirtual === true;
+        return !isVirtual;
+      });
+      
+      console.log('Real Inventory Items:', realInventory.length);
+      console.log('Sample Real Item:', realInventory[0]);
+      
+      if (realInventory.length === 0) {
+        setError('No inventory records found. Please add inventory first.');
+      }
+      
+      setInventory(realInventory);
+      applyFilters(realInventory, searchTerm, stockFilter, typeFilter, minStockFilter);
     } catch (err) {
-      setError('Failed to load inventory');
+      console.error('Failed to load inventory:', err);
+      setError('Failed to load inventory. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -124,7 +144,7 @@ const Inventory = () => {
     }
   };
 
-  // Get unique product types
+  // Get unique product types from REAL inventory
   const productTypes = ['all', ...new Set(
     inventory
       .map(item => item.product?.type)
@@ -132,36 +152,36 @@ const Inventory = () => {
       .map(type => type.toLowerCase())
   )];
 
-  // Stats
-  const totalItems = filtered.reduce((sum, i) => sum + i.quantity, 0);
-  const totalValue = filtered.reduce((sum, i) => sum + (i.quantity * (i.product?.purchasePrice || 0)), 0);
-  const lowStock = filtered.filter(i => i.quantity > 0 && i.quantity <= (i.minStockLevel || 5)).length;
-  const outOfStock = filtered.filter(i => i.quantity === 0).length;
-  const inStock = filtered.filter(i => i.quantity > (i.minStockLevel || 5)).length;
+  // Stats - Using only real inventory
+  const totalItems = filtered.reduce((sum, i) => sum + (i.quantity || 0), 0);
+  const totalValue = filtered.reduce((sum, i) => sum + ((i.quantity || 0) * (i.product?.purchasePrice || 0)), 0);
+  const lowStock = filtered.filter(i => (i.quantity || 0) > 0 && (i.quantity || 0) <= (i.minStockLevel || 5)).length;
+  const outOfStock = filtered.filter(i => (i.quantity || 0) === 0).length;
+  const inStock = filtered.filter(i => (i.quantity || 0) > (i.minStockLevel || 5)).length;
 
   // PRINT FUNCTIONS
-// PRINT FUNCTIONS WITH ALL TYPES IN ONE LINE
+ // OPTIMIZED PDF REPORT - Landscape, Tiny Font, Max Items Per Page
 const printInventory = (option = 'all', productId = '') => {
   let dataToPrint = [...filtered];
   let title = 'COMPLETE INVENTORY REPORT';
-  
+
   if (option === 'low') {
     dataToPrint = filtered.filter(item => item.quantity > 0 && item.quantity <= (item.minStockLevel || 5));
-    title = 'LOW STOCK INVENTORY REPORT (≤ 5 items)';
+    title = 'LOW STOCK REPORT (≤ 5)';
   } else if (option === 'out') {
     dataToPrint = filtered.filter(item => item.quantity === 0);
-    title = 'OUT OF STOCK INVENTORY REPORT';
+    title = 'OUT OF STOCK REPORT';
   } else if (option === 'in') {
     dataToPrint = filtered.filter(item => item.quantity > (item.minStockLevel || 5));
-    title = 'IN STOCK INVENTORY REPORT';
+    title = 'IN STOCK REPORT';
   } else if (option === 'specific' && productId) {
     dataToPrint = filtered.filter(item => item.product?._id === productId);
-    const productName = dataToPrint[0]?.product?.name || 'Product';
-    title = `${productName.toUpperCase()} - STOCK REPORT`;
+    const name = dataToPrint[0]?.product?.name || 'Product';
+    title = `${name.toUpperCase()} - STOCK REPORT`;
   }
 
   if (dataToPrint.length === 0) {
-    setError(`No items found for ${option} stock report`);
+    setError('No items to print');
     setShowPrintModal(false);
     return;
   }
@@ -169,161 +189,110 @@ const printInventory = (option = 'all', productId = '') => {
   const doc = new jsPDF('l', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  
-  // Function to add header
-  const addHeader = (isFirstPage = true, pageNumber = 1) => {
-    if (isFirstPage) {
-      // Main header only on first page
-      doc.setFontSize(22);
-      doc.text('AL WAQAS PAINT AND HARDWARE SHOP', pageWidth / 2, 20, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text('www.alwaqaspaint.com', pageWidth / 2, 28, { align: 'center' });
-      doc.setFontSize(16);
-      doc.text(title, pageWidth / 2, 40, { align: 'center' });
-      
-      // Report details
-      doc.setFontSize(10);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 50);
-      doc.text(`Total Items: ${dataToPrint.length}`, 14, 56);
-      
-      if (option === 'low') {
-        doc.text(`Filter: Stock ≤ 5 items`, 14, 62);
-      } else if (option === 'out') {
-        doc.text(`Filter: Out of Stock`, 14, 62);
-      } else if (option === 'in') {
-        doc.text(`Filter: In Stock`, 14, 62);
-      }
-      
-      return 66; // Start Y position for table
-    } else {
-      // Continuation pages header
-      doc.setFontSize(16);
-      doc.text(`${title} (Contd.)`, pageWidth / 2, 20, { align: 'center' });
-      doc.setFontSize(10);
-      doc.text(`Page ${pageNumber}`, pageWidth / 2, 28, { align: 'center' });
-      
-      return 32; // Start Y position for table on continuation pages
-    }
-  };
 
-  // Function to add footer
-  const addFooter = (pageNumber) => {
-    doc.setFontSize(9);
-    doc.text(
-      `Page ${pageNumber}`,
-      pageWidth / 2,
-      pageHeight - 10,
-      { align: 'center' }
-    );
-  };
+  // Header
+  doc.setFontSize(20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('AL WAQAS PAINT & HARDWARE', pageWidth / 2, 15, { align: 'center' });
 
-  // Sort data by product name so same names appear together
-  const sortedData = [...dataToPrint].sort((a, b) => {
-    const nameA = a.product?.name || '';
-    const nameB = b.product?.name || '';
-    return nameA.localeCompare(nameB);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'normal');
+  doc.text(title, pageWidth / 2, 23, { align: 'center' });
+
+  doc.setFontSize(9);
+  doc.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, pageWidth / 2, 30, { align: 'center' });
+  doc.text(`Total Records: ${dataToPrint.length}`, pageWidth / 2, 35, { align: 'center' });
+
+  // Sort by name
+  const sorted = [...dataToPrint].sort((a, b) => (a.product?.name || '').localeCompare(b.product?.name || ''));
+
+  // Prepare table rows
+  const tableData = sorted.map(item => {
+    const qty = item.quantity || 0;
+    const price = item.product?.purchasePrice || 0;
+    const value = qty * price;
+    const colorName = item.color ? `${item.color.codeName} (${item.color.name})` : '—';
+    
+    return [
+      item.product?.name || 'Unknown',
+      item.product?.code || '—',
+      colorName,
+      item.product?.type?.toUpperCase() || '—',
+      qty,
+      item.minStockLevel || 5,
+      qty === 0 ? 'OUT' : qty <= (item.minStockLevel || 5) ? 'LOW' : 'OK',
+      `Rs. ${value.toLocaleString()}`
+    ];
   });
 
-  // Prepare table data - Each product entry separately
-  const tableData = [];
-  let totalQuantity = 0;
-  let totalValue = 0;
-  
-  sortedData.forEach((item, index) => {
-    const productName = item.product?.name || 'Unknown';
-    const productCode = item.product?.code || '';
-    const productType = item.product?.type?.toUpperCase() || 'OTHER';
-    const quantity = item.quantity;
-    const value = item.quantity * (item.product?.purchasePrice || 0);
-    const status = getStockStatus(item.quantity, item.minStockLevel || 5).label;
-    
-    totalQuantity += quantity;
-    totalValue += value;
-    
-    tableData.push([
-      productName,
-      productCode || '—',
-      productType,
-      quantity,
-      status,
-      `Rs. ${Math.round(value).toLocaleString()}`
-    ]);
+  // ULTRA TIGHT: 35+ items per page
+  autoTable(doc, {
+    head: [['Product Name', 'Code', 'Color', 'Type', 'Stock', 'Min', 'Status', 'Value']],
+    body: tableData,
+    startY: 40,
+    theme: 'grid',
+    styles: {
+      fontSize: 7,           // ← Smaller font
+      cellPadding: 1.2,      // ← Less padding
+      overflow: 'linebreak',
+      halign: 'center',
+      valign: 'middle'
+    },
+    headStyles: {
+      fillColor: [41, 128, 185],
+      textColor: 255,
+      fontSize: 7.5,
+      fontStyle: 'bold'
+    },
+    columnStyles: {
+      0: { cellWidth: 62, halign: 'left' },
+      1: { cellWidth: 28 },
+      2: { cellWidth: 48 },
+      3: { cellWidth: 22 },
+      4: { cellWidth: 18 },
+      5: { cellWidth: 16 },
+      6: { cellWidth: 22 },
+      7: { cellWidth: 32, halign: 'right' }
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { top: 40, bottom: 15, left: 6, right: 6 },
+    didDrawPage: (data) => {
+      // PAGE NUMBER - BOTTOM RIGHT
+      const pageCount = doc.internal.getNumberOfPages();
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.text(
+        `Page ${data.pageNumber} of ${pageCount}`,
+        pageWidth - 20,
+        pageHeight - 8,
+        { align: 'right' }
+      );
+    }
   });
 
-  // Calculate how many pages we'll need
-  const rowsPerPage = 30; // Adjust based on your font size
-  const totalPages = Math.ceil(tableData.length / rowsPerPage);
-  
-  // Create a separate PDF for each page
-  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-    if (pageNum > 1) {
-      doc.addPage('l'); // Add new page for landscape
-    }
-    
-    const isFirstPage = pageNum === 1;
-    const startY = addHeader(isFirstPage, pageNum);
-    
-    // Get data for this page
-    const startIndex = (pageNum - 1) * rowsPerPage;
-    const endIndex = Math.min(startIndex + rowsPerPage, tableData.length);
-    const pageData = tableData.slice(startIndex, endIndex);
-    
-    // Add table for this page
-    autoTable(doc, {
-      head: [['Product Name', 'Code', 'Type', 'Quantity', 'Status', 'Value']],
-      body: pageData,
-      startY: startY,
-      margin: { left: 14, right: 14 },
-      styles: { 
-        fontSize: 9, 
-        cellPadding: 2.5,
-        lineColor: [200, 200, 200],
-        lineWidth: 0.1
-      },
-      headStyles: { 
-        fillColor: [41, 128, 185], 
-        textColor: 255,
-        fontSize: 10,
-        cellPadding: 3,
-        fontStyle: 'bold'
-      },
-      alternateRowStyles: { fillColor: [250, 250, 250] },
-      columnStyles: {
-        0: { cellWidth: 70 }, // Product Name
-        1: { cellWidth: 25, halign: 'center' }, // Code
-        2: { cellWidth: 25, halign: 'center' }, // Type
-        3: { cellWidth: 25, halign: 'center' }, // Quantity
-        4: { cellWidth: 30, halign: 'center' }, // Status
-        5: { cellWidth: 35, halign: 'right' }  // Value
-      }
-    });
-    
-    // Add footer
-    addFooter(pageNum);
-    
-    // Add summary only on last page
-    if (pageNum === totalPages) {
-      const finalY = doc.lastAutoTable.finalY || startY + 50;
-      const uniqueProducts = [...new Set(sortedData.map(item => item.product?.name))].length;
-      
-      // Footer with summary
-      doc.setFontSize(11);
-      doc.text(`Summary:`, 14, finalY + 15);
-      doc.text(`• Total Products/Variants: ${sortedData.length}`, 14, finalY + 22);
-      doc.text(`• Unique Product Names: ${uniqueProducts}`, 14, finalY + 29);
-      doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 36);
-      doc.text(`• Total Inventory Value: Rs. ${Math.round(totalValue).toLocaleString()}`, 14, finalY + 43);
-    }
-  }
+  // Summary
+  const finalY = doc.lastAutoTable.finalY + 10;
+  const totalQty = sorted.reduce((sum, i) => sum + (i.quantity || 0), 0);
+  const totalValue = sorted.reduce((sum, i) => sum + ((i.quantity || 0) * (i.product?.purchasePrice || 0)), 0);
 
-  // Save PDF
-  const filename = `inventory_${option}_${new Date().toISOString().slice(0,10)}.pdf`;
-  doc.save(filename);
-  
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SUMMARY', 14, finalY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(`• Total Variants: ${sorted.length}`, 14, finalY + 7);
+  doc.text(`• Unique Products: ${new Set(sorted.map(i => i.product?.name)).size}`, 14, finalY + 12);
+  doc.text(`• Total Quantity: ${totalQty.toLocaleString()}`, 14, finalY + 17);
+  doc.text(`• Total Value: Rs. ${totalValue.toLocaleString()}`, 14, finalY + 22);
+
+  const fileName = `AlWaqas_Inventory_${option}_${new Date().toISOString().slice(0,10)}.pdf`;
+  doc.save(fileName);
+
   setShowPrintModal(false);
-  setSuccess(`${sortedData.length} product entries printed successfully!`);
-  setTimeout(() => setSuccess(''), 3000);
+  setSuccess(`PDF Ready! ${sorted.length} items`);
+  setTimeout(() => setSuccess(''), 4000);
 };
+
   const handlePrint = () => {
     if (printOption === 'specific' && !specificProduct) {
       setError('Please select a product for specific product report');
@@ -338,6 +307,12 @@ const printInventory = (option = 'all', productId = '') => {
     setTypeFilter('all');
     setMinStockFilter('');
     setShowFilters(false);
+  };
+
+  const refreshInventory = () => {
+    fetchInventory();
+    setSuccess('Inventory refreshed successfully!');
+    setTimeout(() => setSuccess(''), 2000);
   };
 
   if (loading) {
@@ -358,9 +333,16 @@ const printInventory = (option = 'all', productId = '') => {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Current Stock</h1>
-          <p className="text-gray-600">Real-time inventory — All products shown (including zero stock)</p>
+          <p className="text-gray-600">Real inventory data - Showing actual stock levels</p>
         </div>
         <div className="flex gap-3">
+          <button 
+            onClick={refreshInventory}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg flex items-center gap-2"
+          >
+            <RefreshCw size={18} />
+            Refresh
+          </button>
           <button 
             onClick={() => setShowPrintModal(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center gap-2"
@@ -384,6 +366,27 @@ const printInventory = (option = 'all', productId = '') => {
         </div>
       )}
       {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
+
+      {/* Debug Info */}
+      <div className="mb-4 p-3 bg-gray-100 rounded-lg">
+        <div className="flex flex-wrap gap-4 text-sm">
+          <div>
+            <span className="font-bold">Real Inventory Items:</span> {inventory.length}
+          </div>
+          <div>
+            <span className="font-bold">Products with Stock greater then  0:</span> {inventory.filter(i => i.quantity > 0).length}
+          </div>
+          <div>
+            <span className="font-bold">Total Quantity:</span> {totalItems}
+          </div>
+          <button 
+            onClick={() => console.log('Inventory Data:', inventory)}
+            className="px-2 py-1 bg-blue-500 text-white text-xs rounded"
+          >
+            Debug Data
+          </button>
+        </div>
+      </div>
 
       {/* Filters Section */}
       {showFilters && (
@@ -546,9 +549,9 @@ const printInventory = (option = 'all', productId = '') => {
             <h3 className="text-xl font-bold text-gray-800">
               Stock List ({filtered.length} entries)
             </h3>
-            {stockFilter === 'low' && (
-              <p className="text-sm text-gray-600 mt-1">Showing items with stock ≤ 5</p>
-            )}
+            <p className="text-sm text-gray-600 mt-1">
+              Showing actual inventory records only
+            </p>
           </div>
           <div className="text-sm text-gray-600">
             Page {currentPage} of {totalPages}
@@ -558,7 +561,8 @@ const printInventory = (option = 'all', productId = '') => {
         {filtered.length === 0 ? (
           <div className="text-center py-20 text-gray-500">
             <Package size={64} className="mx-auto mb-4 text-gray-300" />
-            <p className="text-xl">No products match your filters</p>
+            <p className="text-xl">No inventory records found</p>
+            <p className="text-gray-600 mb-4">Add inventory through purchases or manually</p>
             <button
               onClick={resetFilters}
               className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -585,13 +589,16 @@ const printInventory = (option = 'all', productId = '') => {
                 <tbody className="divide-y divide-gray-200">
                   {currentItems.map(item => {
                     const status = getStockStatus(item.quantity, item.minStockLevel);
-                    const value = item.quantity * (item.product?.purchasePrice || 0);
+                    const value = (item.quantity || 0) * (item.product?.purchasePrice || 0);
                     const Icon = status.icon;
 
                     return (
                       <tr key={item._id} className="hover:bg-gray-50 transition">
                         <td className="px-6 py-4">
                           <div className="font-semibold text-gray-900">{item.product?.name || '—'}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            ID: {item._id?.substring(0, 8)}...
+                          </div>
                         </td>
 
                         <td className="px-6 py-4">
@@ -626,7 +633,7 @@ const printInventory = (option = 'all', productId = '') => {
                         <td className="px-6 py-4">
                           <div className={`text-2xl font-bold ${item.quantity === 0 ? 'text-red-600' : 
                             item.quantity <= (item.minStockLevel || 5) ? 'text-yellow-600' : 'text-gray-800'}`}>
-                            {item.quantity}
+                            {item.quantity || 0}
                           </div>
                         </td>
 
