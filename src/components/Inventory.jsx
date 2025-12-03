@@ -140,101 +140,190 @@ const Inventory = () => {
   const inStock = filtered.filter(i => i.quantity > (i.minStockLevel || 5)).length;
 
   // PRINT FUNCTIONS
-  const printInventory = (option = 'all', productId = '') => {
-    let dataToPrint = [...filtered];
-    let title = 'COMPLETE INVENTORY REPORT';
-    
-    if (option === 'low') {
-      dataToPrint = filtered.filter(item => item.quantity > 0 && item.quantity <= (item.minStockLevel || 5));
-      title = 'LOW STOCK INVENTORY REPORT (≤ 5 items)';
-    } else if (option === 'out') {
-      dataToPrint = filtered.filter(item => item.quantity === 0);
-      title = 'OUT OF STOCK INVENTORY REPORT';
-    } else if (option === 'in') {
-      dataToPrint = filtered.filter(item => item.quantity > (item.minStockLevel || 5));
-      title = 'IN STOCK INVENTORY REPORT';
-    } else if (option === 'specific' && productId) {
-      dataToPrint = filtered.filter(item => item.product?._id === productId);
-      const productName = dataToPrint[0]?.product?.name || 'Product';
-      title = `${productName.toUpperCase()} - STOCK REPORT`;
-    }
+// PRINT FUNCTIONS WITH ALL TYPES IN ONE LINE
+const printInventory = (option = 'all', productId = '') => {
+  let dataToPrint = [...filtered];
+  let title = 'COMPLETE INVENTORY REPORT';
+  
+  if (option === 'low') {
+    dataToPrint = filtered.filter(item => item.quantity > 0 && item.quantity <= (item.minStockLevel || 5));
+    title = 'LOW STOCK INVENTORY REPORT (≤ 5 items)';
+  } else if (option === 'out') {
+    dataToPrint = filtered.filter(item => item.quantity === 0);
+    title = 'OUT OF STOCK INVENTORY REPORT';
+  } else if (option === 'in') {
+    dataToPrint = filtered.filter(item => item.quantity > (item.minStockLevel || 5));
+    title = 'IN STOCK INVENTORY REPORT';
+  } else if (option === 'specific' && productId) {
+    dataToPrint = filtered.filter(item => item.product?._id === productId);
+    const productName = dataToPrint[0]?.product?.name || 'Product';
+    title = `${productName.toUpperCase()} - STOCK REPORT`;
+  }
 
-    if (dataToPrint.length === 0) {
-      setError(`No items found for ${option} stock report`);
-      setShowPrintModal(false);
-      return;
-    }
-
-    const doc = new jsPDF('l', 'mm', 'a4');
-    
-    // Header
-    doc.setFontSize(22);
-    doc.text('AL WAQAS PAINT AND HARDWARE SHOP', 148, 20, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text('www.alwaqaspaint.com', 148, 28, { align: 'center' });
-    doc.setFontSize(16);
-    doc.text(title, 148, 40, { align: 'center' });
-    
-    // Report details
-    doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 50);
-    doc.text(`Total Items: ${dataToPrint.length}`, 14, 56);
-    
-    if (option === 'low') {
-      doc.text(`Filter: Stock ≤ 5 items`, 14, 62);
-    } else if (option === 'out') {
-      doc.text(`Filter: Out of Stock`, 14, 62);
-    } else if (option === 'in') {
-      doc.text(`Filter: In Stock`, 14, 62);
-    }
-
-    // Table data
-    const tableData = dataToPrint.map(item => {
-      const status = getStockStatus(item.quantity, item.minStockLevel || 5);
-      const value = item.quantity * (item.product?.purchasePrice || 0);
-      
-      return [
-        item.product?.name || '—',
-        item.product?.code || '—',
-        item.product?.type?.toUpperCase() || '—',
-        item.color ? `${item.color.codeName} (${item.color.name})` : 'No Color',
-        item.quantity,
-        item.minStockLevel || 5,
-        status.label,
-        `Rs. ${value.toLocaleString()}`
-      ];
-    });
-
-    // Calculate total value
-    const reportTotalValue = dataToPrint.reduce((sum, item) => 
-      sum + (item.quantity * (item.product?.purchasePrice || 0)), 0
-    );
-
-    autoTable(doc, {
-      head: [['Product', 'Code', 'Type', 'Color', 'Stock', 'Min', 'Status', 'Value']],
-      body: tableData,
-      startY: 70,
-      styles: { fontSize: 9, cellPadding: 3 },
-      headStyles: { fillColor: [41, 128, 185], textColor: 255 },
-      alternateRowStyles: { fillColor: [245, 250, 255] }
-    });
-
-    const finalY = doc.lastAutoTable.finalY || 70;
-    
-    // Footer with total value
-    doc.setFontSize(11);
-    doc.text(`Total Inventory Value: Rs. ${reportTotalValue.toLocaleString()}`, 14, finalY + 15);
-    doc.text(`Total Items Count: ${dataToPrint.reduce((sum, item) => sum + item.quantity, 0)}`, 14, finalY + 22);
-
-    // Save PDF
-    const filename = `inventory_${option}_${new Date().toISOString().slice(0,10)}.pdf`;
-    doc.save(filename);
-    
+  if (dataToPrint.length === 0) {
+    setError(`No items found for ${option} stock report`);
     setShowPrintModal(false);
-    setSuccess(`${dataToPrint.length} items printed successfully!`);
-    setTimeout(() => setSuccess(''), 3000);
+    return;
+  }
+
+  const doc = new jsPDF('l', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  
+  // Function to add header
+  const addHeader = (isFirstPage = true, pageNumber = 1) => {
+    if (isFirstPage) {
+      // Main header only on first page
+      doc.setFontSize(22);
+      doc.text('AL WAQAS PAINT AND HARDWARE SHOP', pageWidth / 2, 20, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text('www.alwaqaspaint.com', pageWidth / 2, 28, { align: 'center' });
+      doc.setFontSize(16);
+      doc.text(title, pageWidth / 2, 40, { align: 'center' });
+      
+      // Report details
+      doc.setFontSize(10);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 50);
+      doc.text(`Total Items: ${dataToPrint.length}`, 14, 56);
+      
+      if (option === 'low') {
+        doc.text(`Filter: Stock ≤ 5 items`, 14, 62);
+      } else if (option === 'out') {
+        doc.text(`Filter: Out of Stock`, 14, 62);
+      } else if (option === 'in') {
+        doc.text(`Filter: In Stock`, 14, 62);
+      }
+      
+      return 66; // Start Y position for table
+    } else {
+      // Continuation pages header
+      doc.setFontSize(16);
+      doc.text(`${title} (Contd.)`, pageWidth / 2, 20, { align: 'center' });
+      doc.setFontSize(10);
+      doc.text(`Page ${pageNumber}`, pageWidth / 2, 28, { align: 'center' });
+      
+      return 32; // Start Y position for table on continuation pages
+    }
   };
 
+  // Function to add footer
+  const addFooter = (pageNumber) => {
+    doc.setFontSize(9);
+    doc.text(
+      `Page ${pageNumber}`,
+      pageWidth / 2,
+      pageHeight - 10,
+      { align: 'center' }
+    );
+  };
+
+  // Sort data by product name so same names appear together
+  const sortedData = [...dataToPrint].sort((a, b) => {
+    const nameA = a.product?.name || '';
+    const nameB = b.product?.name || '';
+    return nameA.localeCompare(nameB);
+  });
+
+  // Prepare table data - Each product entry separately
+  const tableData = [];
+  let totalQuantity = 0;
+  let totalValue = 0;
+  
+  sortedData.forEach((item, index) => {
+    const productName = item.product?.name || 'Unknown';
+    const productCode = item.product?.code || '';
+    const productType = item.product?.type?.toUpperCase() || 'OTHER';
+    const quantity = item.quantity;
+    const value = item.quantity * (item.product?.purchasePrice || 0);
+    const status = getStockStatus(item.quantity, item.minStockLevel || 5).label;
+    
+    totalQuantity += quantity;
+    totalValue += value;
+    
+    tableData.push([
+      productName,
+      productCode || '—',
+      productType,
+      quantity,
+      status,
+      `Rs. ${Math.round(value).toLocaleString()}`
+    ]);
+  });
+
+  // Calculate how many pages we'll need
+  const rowsPerPage = 30; // Adjust based on your font size
+  const totalPages = Math.ceil(tableData.length / rowsPerPage);
+  
+  // Create a separate PDF for each page
+  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+    if (pageNum > 1) {
+      doc.addPage('l'); // Add new page for landscape
+    }
+    
+    const isFirstPage = pageNum === 1;
+    const startY = addHeader(isFirstPage, pageNum);
+    
+    // Get data for this page
+    const startIndex = (pageNum - 1) * rowsPerPage;
+    const endIndex = Math.min(startIndex + rowsPerPage, tableData.length);
+    const pageData = tableData.slice(startIndex, endIndex);
+    
+    // Add table for this page
+    autoTable(doc, {
+      head: [['Product Name', 'Code', 'Type', 'Quantity', 'Status', 'Value']],
+      body: pageData,
+      startY: startY,
+      margin: { left: 14, right: 14 },
+      styles: { 
+        fontSize: 9, 
+        cellPadding: 2.5,
+        lineColor: [200, 200, 200],
+        lineWidth: 0.1
+      },
+      headStyles: { 
+        fillColor: [41, 128, 185], 
+        textColor: 255,
+        fontSize: 10,
+        cellPadding: 3,
+        fontStyle: 'bold'
+      },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      columnStyles: {
+        0: { cellWidth: 70 }, // Product Name
+        1: { cellWidth: 25, halign: 'center' }, // Code
+        2: { cellWidth: 25, halign: 'center' }, // Type
+        3: { cellWidth: 25, halign: 'center' }, // Quantity
+        4: { cellWidth: 30, halign: 'center' }, // Status
+        5: { cellWidth: 35, halign: 'right' }  // Value
+      }
+    });
+    
+    // Add footer
+    addFooter(pageNum);
+    
+    // Add summary only on last page
+    if (pageNum === totalPages) {
+      const finalY = doc.lastAutoTable.finalY || startY + 50;
+      const uniqueProducts = [...new Set(sortedData.map(item => item.product?.name))].length;
+      
+      // Footer with summary
+      doc.setFontSize(11);
+      doc.text(`Summary:`, 14, finalY + 15);
+      doc.text(`• Total Products/Variants: ${sortedData.length}`, 14, finalY + 22);
+      doc.text(`• Unique Product Names: ${uniqueProducts}`, 14, finalY + 29);
+      doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 36);
+      doc.text(`• Total Inventory Value: Rs. ${Math.round(totalValue).toLocaleString()}`, 14, finalY + 43);
+    }
+  }
+
+  // Save PDF
+  const filename = `inventory_${option}_${new Date().toISOString().slice(0,10)}.pdf`;
+  doc.save(filename);
+  
+  setShowPrintModal(false);
+  setSuccess(`${sortedData.length} product entries printed successfully!`);
+  setTimeout(() => setSuccess(''), 3000);
+};
   const handlePrint = () => {
     if (printOption === 'specific' && !specificProduct) {
       setError('Please select a product for specific product report');

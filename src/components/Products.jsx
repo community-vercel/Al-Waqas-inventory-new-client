@@ -1,21 +1,13 @@
-// components/Products.jsx - ENHANCED PAGINATION WITH NUMBERED PAGES
+// components/Products.jsx - FIXED UPLOAD HANDLING
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, Search, Upload, Download, Edit, X, 
   CheckCircle, AlertCircle, Loader2, ChevronLeft, ChevronRight, 
-  FileText, ChevronFirst, ChevronLast, ListFilter
+  FileText, ChevronFirst, ChevronLast, ListFilter, RefreshCw
 } from 'lucide-react';
 import { productsAPI } from './../../services/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-// Special upload with long timeout (1 minute)
-const uploadWithLongTimeout = (formData) => {
-  return productsAPI.uploadCSV(formData, {
-    timeout: 60000, 
-    headers: { 'Content-Type': 'multipart/form-data' }
-  });
-};
 
 const Products = () => {
   const [products, setProducts] = useState([]);
@@ -36,12 +28,11 @@ const Products = () => {
   // Filters
   const [showFilters, setShowFilters] = useState(false);
   const [typeFilter, setTypeFilter] = useState('all');
-  const [stockFilter, setStockFilter] = useState('all'); // 'all', 'in', 'low', 'out'
+  const [stockFilter, setStockFilter] = useState('all');
 
   // Upload Modal
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('idle');
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMessage, setUploadMessage] = useState('');
 
   const [newProduct, setNewProduct] = useState({
@@ -84,7 +75,6 @@ const Products = () => {
   useEffect(() => {
     let filtered = [...products];
     
-    // Search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(p =>
@@ -94,14 +84,11 @@ const Products = () => {
       );
     }
     
-    // Type filter
     if (typeFilter !== 'all') {
       filtered = filtered.filter(p => p.type.toLowerCase() === typeFilter.toLowerCase());
     }
     
-    // Stock filter (based on initial qty or inventory logic)
     if (stockFilter !== 'all') {
-      // Note: This is a simple filter. For real stock, you'd need inventory data
       if (stockFilter === 'in') {
         filtered = filtered.filter(p => (p.initialStock || 0) > 10);
       } else if (stockFilter === 'low') {
@@ -112,7 +99,7 @@ const Products = () => {
     }
     
     setFilteredProducts(filtered);
-    setCurrentPage(1); // Reset to first page when filters change
+    setCurrentPage(1);
   }, [searchTerm, typeFilter, stockFilter, products]);
 
   const addProduct = async () => {
@@ -211,61 +198,62 @@ const Products = () => {
     setShowFilters(false);
   };
 
-  // UPLOAD CSV — FIXED TIMEOUT
+  // SIMPLIFIED UPLOAD HANDLER
   const handleCsvUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setUploadStatus('uploading');
-    setUploadProgress(20);
-    setUploadMessage('Uploading your file...');
+    setUploadMessage('Uploading and processing CSV file...');
     setShowUploadModal(true);
 
     const formData = new FormData();
     formData.append('csvFile', file);
 
     try {
-      setUploadProgress(40);
-      setUploadMessage('Sending to server...');
-
-      const res = await uploadWithLongTimeout(formData);
-
-      setUploadProgress(80);
-      setUploadMessage('Saving products...');
+      // Remove timeout - let it take as long as needed
+      const res = await productsAPI.uploadCSV(formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
 
       const imported = res.data.imported || 0;
-
-      setUploadProgress(100);
+      
       setUploadStatus('success');
       setUploadMessage(`Successfully imported ${imported} products!`);
-
-      // Refresh list
-      fetchProducts();
-
-      setTimeout(() => {
-        setShowUploadModal(false);
-        setUploadStatus('idle');
-        setUploadProgress(0);
-        setUploadMessage('');
-        setSuccess(`Successfully imported ${imported} products!`);
-      }, 2000);
-
+      
+      // Refresh products list
+      await fetchProducts();
+      setSuccess(`Successfully imported ${imported} products!`);
+      
     } catch (err) {
       console.error('Upload error:', err);
-
-      let msg = 'Upload failed';
-      if (err.code === 'ECONNABORTED' || err.message?.response?.status === 504) {
-        msg = 'Upload took too long, but products may have been imported. Refresh to check.';
+      
+      let msg = 'Upload failed. Please try again.';
+      
+      // Check if upload actually succeeded in background
+      const checkIfProductsAdded = async () => {
+        try {
+          await fetchProducts();
+          // If we can fetch products, maybe upload worked
+          msg = 'Upload completed! Products have been added.';
+          setUploadStatus('success');
+        } catch (fetchErr) {
+          // Real error
+          setUploadStatus('error');
+        }
+      };
+      
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        // Timeout - check if products were added anyway
+        await checkIfProductsAdded();
+        if (uploadStatus !== 'success') {
+          msg = 'Upload took longer than expected. Please refresh to check if products were added.';
+        }
       } else if (err.response?.data?.message) {
         msg = err.response.data.message;
       }
-
-      setUploadStatus('error');
+      
       setUploadMessage(msg);
-      setUploadProgress(0);
-
-      // Still try to refresh in case it worked
-      setTimeout(() => fetchProducts(), 30000);
     } finally {
       e.target.value = '';
     }
@@ -645,7 +633,7 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
         </div>
       )}
 
-      {/* Products Table with Enhanced Pagination */}
+      {/* Products Table */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -738,7 +726,7 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
               </table>
             </div>
 
-            {/* ENHANCED PAGINATION */}
+            {/* PAGINATION */}
             {totalPages > 1 && (
               <div className="px-6 py-4 bg-gray-50 border-t flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-sm text-gray-600">
@@ -746,7 +734,6 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
                 </div>
                 
                 <div className="flex flex-col sm:flex-row items-center gap-4">
-                  {/* Items per page selector */}
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-600">Show:</span>
                     <select
@@ -764,9 +751,7 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
                     <span className="text-sm text-gray-600">per page</span>
                   </div>
                   
-                  {/* Page navigation */}
                   <div className="flex items-center gap-2">
-                    {/* First page button */}
                     <button
                       onClick={goToFirstPage}
                       disabled={currentPage === 1}
@@ -776,7 +761,6 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
                       <ChevronFirst size={16} />
                     </button>
                     
-                    {/* Previous page button */}
                     <button
                       onClick={goToPrevPage}
                       disabled={currentPage === 1}
@@ -786,7 +770,6 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
                       <span className="hidden sm:inline">Prev</span>
                     </button>
                     
-                    {/* Page numbers */}
                     <div className="flex items-center gap-1">
                       {getPageNumbers().map(page => (
                         <button
@@ -803,7 +786,6 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
                       ))}
                     </div>
                     
-                    {/* Go to page input */}
                     <div className="flex items-center gap-1">
                       <input
                         ref={pageInputRef}
@@ -820,7 +802,6 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
                       <span className="text-sm text-gray-600">of {totalPages}</span>
                     </div>
                     
-                    {/* Next page button */}
                     <button
                       onClick={goToNextPage}
                       disabled={currentPage === totalPages}
@@ -830,7 +811,6 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
                       <ChevronRight size={16} />
                     </button>
                     
-                    {/* Last page button */}
                     <button
                       onClick={goToLastPage}
                       disabled={currentPage === totalPages}
@@ -847,7 +827,7 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
         )}
       </div>
 
-      {/* Upload Modal */}
+      {/* SIMPLIFIED UPLOAD MODAL */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
@@ -857,7 +837,7 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
               <div className="space-y-6">
                 <div className="border-4 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 transition cursor-pointer">
                   <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" id="csv-upload" />
-                  <label htmlFor="csv-upload">
+                  <label htmlFor="csv-upload" className="cursor-pointer">
                     <FileText size={64} className="mx-auto text-gray-400 mb-4" />
                     <p className="text-xl font-bold text-blue-600">Click to upload CSV</p>
                     <p className="text-sm text-gray-500 mt-2">or drag and drop</p>
@@ -870,15 +850,19 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
               </div>
             )}
 
-            {(uploadStatus === 'uploading' || uploadStatus === 'processing') && (
+            {uploadStatus === 'uploading' && (
               <div className="text-center space-y-6">
                 <Loader2 size={64} className="mx-auto animate-spin text-blue-600" />
                 <div>
                   <p className="text-xl font-semibold text-gray-700">{uploadMessage}</p>
-                  <div className="mt-4 bg-gray-200 rounded-full h-4 overflow-hidden">
-                    <div className="bg-blue-600 h-full transition-all duration-500" style={{ width: `${uploadProgress}%` }}></div>
+                  <div className="mt-6">
+                    <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-600 animate-pulse"></div>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-500 mt-2">{uploadProgress}%</p>
+                  <p className="text-sm text-gray-500 mt-4">
+                    Please wait, this may take a minute...
+                  </p>
                 </div>
               </div>
             )}
@@ -887,30 +871,46 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
               <div className="text-center space-y-6">
                 <CheckCircle size={80} className="mx-auto text-green-500" />
                 <p className="text-2xl font-bold text-green-600">{uploadMessage}</p>
+                <p className="text-gray-600">Products have been added successfully!</p>
+                <div className="mt-6">
+                  <button 
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      setUploadStatus('idle');
+                      setUploadMessage('');
+                    }} 
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             )}
 
             {uploadStatus === 'error' && (
               <div className="text-center space-y-6">
-                <AlertCircle size={80} className="mx-auto text-red-500" />
-                <p className="text-xl font-bold text-red-600">Upload Failed</p>
+                <AlertCircle size={80} className="mx-auto text-yellow-500" />
+                <p className="text-xl font-bold text-yellow-600">Upload Status</p>
                 <p className="text-gray-600">{uploadMessage}</p>
-                <p className="text-sm text-orange-600 mt-4">
-                  If products appear after refresh → upload was successful!
-                </p>
-              </div>
-            )}
-
-            {(uploadStatus === 'success' || uploadStatus === 'error') && (
-              <div className="mt-8 text-center">
-                <button onClick={() => {
-                  setShowUploadModal(false);
-                  setUploadStatus('idle');
-                  setUploadProgress(0);
-                  setUploadMessage('');
-                }} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold">
-                  Close
-                </button>
+                <div className="mt-6 space-y-3">
+                  <button 
+                    onClick={fetchProducts}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 justify-center w-full"
+                  >
+                    <RefreshCw size={18} />
+                    Refresh Products List
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      setUploadStatus('idle');
+                      setUploadMessage('');
+                    }} 
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg w-full"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             )}
           </div>

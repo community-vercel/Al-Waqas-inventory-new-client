@@ -69,6 +69,7 @@ export const colorsAPI = {
 // Products API
 export const productsAPI = {
   getAll: () => api.get('/products'),
+  bulkDeleteAll: () => api.delete('/products/bulk-delete-all'),
   create: (productData) => api.post('/products', productData),
   update: (id, productData) => api.put(`/products/${id}`, productData),
   delete: (id) => api.delete(`/products/${id}`),
