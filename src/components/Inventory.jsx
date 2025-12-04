@@ -368,7 +368,7 @@ const printInventory = (option = 'all', productId = '') => {
       {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>}
 
       {/* Debug Info */}
-      <div className="mb-4 p-3 bg-gray-100 rounded-lg">
+      {/* <div className="mb-4 p-3 bg-gray-100 rounded-lg">
         <div className="flex flex-wrap gap-4 text-sm">
           <div>
             <span className="font-bold">Real Inventory Items:</span> {inventory.length}
@@ -386,7 +386,7 @@ const printInventory = (option = 'all', productId = '') => {
             Debug Data
           </button>
         </div>
-      </div>
+      </div> */}
 
       {/* Filters Section */}
       {showFilters && (
