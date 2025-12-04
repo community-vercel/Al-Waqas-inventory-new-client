@@ -43,41 +43,42 @@ const Inventory = () => {
     return () => window.removeEventListener('inventoryShouldUpdate', handleUpdate);
   }, []);
 
-  const fetchInventory = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const response = await inventoryAPI.getAll();
-      
-      // Log for debugging
-      console.log('API Response:', response.data);
-      
-      // Get the actual inventory data
-      const apiData = response.data?.data || [];
-      
-      // FILTER OUT VIRTUAL ITEMS - Only show real inventory entries
-      const realInventory = apiData.filter(item => {
-        // Exclude virtual items created by backend
-        const isVirtual = item._id?.startsWith('virtual-') || item.isVirtual === true;
-        return !isVirtual;
-      });
-      
-      console.log('Real Inventory Items:', realInventory.length);
-      console.log('Sample Real Item:', realInventory[0]);
-      
-      if (realInventory.length === 0) {
-        setError('No inventory records found. Please add inventory first.');
-      }
-      
-      setInventory(realInventory);
-      applyFilters(realInventory, searchTerm, stockFilter, typeFilter, minStockFilter);
-    } catch (err) {
-      console.error('Failed to load inventory:', err);
-      setError('Failed to load inventory. Please try again.');
-    } finally {
-      setLoading(false);
+ const fetchInventory = async () => {
+  try {
+    setLoading(true);
+    setError('');
+    const response = await inventoryAPI.getAll();
+    
+    console.log('API Response:', response.data);
+    
+    const apiData = response.data?.data || [];
+
+    // SHOW ALL ITEMS WITH AUTO-MATCHED COLORS
+  const displayInventory = apiData.filter(item => {
+  // Show all real items
+  if (!item.isVirtual) return true;
+  // Show virtual items only if they have a color (auto-matched)
+  if (item.color) return true;
+  // Hide empty virtual items
+  return false;
+});
+
+    console.log('Showing Items:', displayInventory.length);
+    console.log('Sample Item:', displayInventory);
+
+    if (displayInventory.length === 0) {
+      setError('No inventory records found.');
     }
-  };
+    
+    setInventory(displayInventory);
+    applyFilters(displayInventory, searchTerm, stockFilter, typeFilter, minStockFilter);
+  } catch (err) {
+    console.error('Failed to load inventory:', err);
+    setError('Failed to load inventory. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Apply all filters
   const applyFilters = (data, search, stock, type, minStock) => {
@@ -607,22 +608,37 @@ const printInventory = (option = 'all', productId = '') => {
                           </span>
                         </td>
 
-                        <td className="px-6 py-4">
-                          {item.color ? (
-                            <div className="flex items-center gap-3">
-                              <div 
-                                className="w-8 h-8 rounded-full border-2 border-white shadow"
-                                style={{ backgroundColor: item.color.hexCode || '#ccc' }}
-                              ></div>
-                              <div>
-                                <div className="font-bold text-gray-800">{item.color.codeName}</div>
-                                <div className="text-xs text-gray-600">{item.color.name}</div>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 italic text-sm">No Color</span>
-                          )}
-                        </td>
+                       <td className="px-6 py-4">
+  {item.color ? (
+    // HAS COLOR — Show beautiful color swatch
+    <div className="flex items-center gap-3">
+      <div
+        className="w-10 h-10 rounded-full border-2 border-white shadow-lg flex-shrink-0 ring-2 ring-gray-200"
+        style={{ backgroundColor: item.color.hexCode || '#94a3b8' }}
+        title={item.color.name || item.color.codeName}
+      />
+      <div className="min-w-0">
+        <div className="font-bold text-gray-900 truncate">
+          {item.color.codeName || 'No Code'}
+        </div>
+        <div className="text-xs text-gray-600 truncate max-w-[120px]">
+          {item.color.name || item.color.codeName || 'No Name'}
+        </div>
+      </div>
+    </div>
+  ) : (
+    // NO COLOR — Clean, professional "No Color" placeholder
+    <div className="flex items-center gap-3 text-gray-500">
+      <div className="w-10 h-10 rounded-full bg-gray-100 border-2 border-dashed border-gray-400 flex items-center justify-center flex-shrink-0">
+        <span className="text-lg font-bold text-gray-400">–</span>
+      </div>
+      <div>
+        <div className="font-medium text-gray-600">No Color</div>
+        <div className="text-xs text-gray-500">Standard Variant</div>
+      </div>
+    </div>
+  )}
+</td>
 
                         <td className="px-6 py-4">
                           <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs uppercase">
