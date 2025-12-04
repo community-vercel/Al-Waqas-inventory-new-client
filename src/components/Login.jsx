@@ -1,4 +1,4 @@
-// components/Login.jsx - REDESIGNED WITH LEFT IMAGE RIGHT LOGIN
+// components/Login.jsx
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Loader, AlertCircle, CheckCircle } from 'lucide-react';
@@ -15,7 +15,7 @@ const Login = () => {
   const LOGO_URL = "https://alwaqaspaint.com/AlWaqas%20Paint%20&%20Hardware.svg";
   const SIDE_IMAGE_URL = "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80";
 const handleSubmit = async (e) => {
-  e.preventDefault(); // ← This MUST be the very first line
+  e.preventDefault();
 
   setMessage('');
   setMessageType('');
@@ -169,7 +169,6 @@ const handleSubmit = async (e) => {
               </button>
             </form>
 
-            {/* Additional Info */}
             
           </div>
         </div>

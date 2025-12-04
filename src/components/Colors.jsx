@@ -1,4 +1,3 @@
-// components/Colors.jsx - WITH REAL-TIME HEX CODE DETECTION
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Upload, Download, FileText, ChevronLeft, ChevronRight, X, Search, AlertCircle, CheckCircle } from 'lucide-react';
 import { colorsAPI } from './../../services/api';
@@ -16,7 +15,7 @@ const Colors = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  const [hexStatus, setHexStatus] = useState(''); // 'valid', 'duplicate', 'invalid'
+  const [hexStatus, setHexStatus] = useState(''); 
   const [existingColor, setExistingColor] = useState(null);
   const itemsPerPage = 12;
 
@@ -24,12 +23,10 @@ const Colors = () => {
     fetchColors();
   }, []);
 
-  // Reset to page 1 when search term changes
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
 
-  // Check for duplicate hex code in real-time
   useEffect(() => {
     if (newColor.hexCode && validateHexCode(newColor.hexCode)) {
       const duplicate = colors.find(color => 

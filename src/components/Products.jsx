@@ -1,4 +1,4 @@
-// components/Products.jsx - FIXED UPLOAD HANDLING
+// components/Products.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, Search, Upload, Download, Edit, X, 
@@ -50,7 +50,6 @@ const Products = () => {
 
   const itemsPerPageOptions = [10, 20, 50, 100];
 
-  // Refs
   const pageInputRef = useRef(null);
 
   useEffect(() => {

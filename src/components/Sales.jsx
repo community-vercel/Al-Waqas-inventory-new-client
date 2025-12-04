@@ -1,4 +1,4 @@
-// components/Sales.jsx - UPDATED WITH ADD CUSTOMER + GLOBAL SEARCH + EDIT/DELETE
+// components/Sales.jsx 
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, Download, Search, Upload, 

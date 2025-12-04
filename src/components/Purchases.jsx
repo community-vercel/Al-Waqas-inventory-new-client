@@ -1,4 +1,4 @@
-// components/Purchases.jsx - UPDATED WITH GLOBAL SEARCH + EDIT/DELETE
+// components/Purchases.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, Download, Search, Upload, 

@@ -1,4 +1,4 @@
-// components/Inventory.jsx - UPDATED WITH ACCURATE STOCK DATA
+// components/Inventory.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   Package, AlertTriangle, TrendingUp, TrendingDown, Search, 
@@ -20,14 +20,14 @@ const Inventory = () => {
   const itemsPerPage = 20;
 
   // Filters
-  const [stockFilter, setStockFilter] = useState('all'); // 'all', 'low', 'out', 'in'
+  const [stockFilter, setStockFilter] = useState('all'); 
   const [showFilters, setShowFilters] = useState(false);
   const [typeFilter, setTypeFilter] = useState('all');
   const [minStockFilter, setMinStockFilter] = useState('');
   
   // Print modal
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [printOption, setPrintOption] = useState('all'); // 'all', 'low', 'out', 'in', 'specific'
+  const [printOption, setPrintOption] = useState('all'); 
   const [specificProduct, setSpecificProduct] = useState('');
 
   useEffect(() => {
@@ -232,8 +232,8 @@ const printInventory = (option = 'all', productId = '') => {
     startY: 40,
     theme: 'grid',
     styles: {
-      fontSize: 7,           // ← Smaller font
-      cellPadding: 1.2,      // ← Less padding
+      fontSize: 7,           
+      cellPadding: 1.2,     
       overflow: 'linebreak',
       halign: 'center',
       valign: 'middle'

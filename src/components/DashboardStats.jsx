@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { TrendingUp, TrendingDown, Package, AlertTriangle, DollarSign, Calendar, ShoppingCart, CreditCard } from 'lucide-react';
 import { salesAPI, purchasesAPI, inventoryAPI } from './../../services/api';
-import { useLocation } from 'react-router-dom'; // ← ADD THIS AT TOP
+import { useLocation } from 'react-router-dom';
 const DashboardStats = () => {
   const [stats, setStats] = useState({
     todaySales: 0,

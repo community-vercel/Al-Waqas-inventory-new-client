@@ -1,4 +1,4 @@
-// components/SuppliersAndCustomers.jsx - WITH TABS
+// components/SuppliersAndCustomers.jsx
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { contactsAPI } from './../../services/api';
@@ -13,7 +13,7 @@ const SuppliersAndCustomers = () => {
   const [submitting, setSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
-  const [activeTab, setActiveTab] = useState('customer'); // 'customer' or 'supplier'
+  const [activeTab, setActiveTab] = useState('customer');
 
   const [newContact, setNewContact] = useState({
     name: '',

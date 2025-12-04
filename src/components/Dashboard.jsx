@@ -22,7 +22,7 @@ import {
 const Dashboard = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [darkMode, setDarkMode] = useState(false);
+  // const [darkMode, setDarkMode] = useState(false);
   const [user, setUser] = useState(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -37,30 +37,29 @@ const Dashboard = () => {
   ];
 
   useEffect(() => {
-    // Get user from localStorage
     const userData = localStorage.getItem('user');
     if (userData) {
       setUser(JSON.parse(userData));
     }
 
     // Check for saved theme preference
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-      setDarkMode(true);
-      document.documentElement.classList.add('dark');
-    }
+    // const savedTheme = localStorage.getItem('theme');
+    // if (savedTheme === 'dark') {
+    //   setDarkMode(true);
+    //   document.documentElement.classList.add('dark');
+    // }
   }, []);
 
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-    if (!darkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  };
+  // const toggleDarkMode = () => {
+  //   setDarkMode(!darkMode);
+  //   if (!darkMode) {
+  //     document.documentElement.classList.add('dark');
+  //     localStorage.setItem('theme', 'dark');
+  //   } else {
+  //     document.documentElement.classList.remove('dark');
+  //     localStorage.setItem('theme', 'light');
+  //   }
+  // };
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);

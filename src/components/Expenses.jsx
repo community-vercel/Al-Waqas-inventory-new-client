@@ -1,4 +1,4 @@
-// components/Expenses.jsx - FINAL PROFESSIONAL & CLEAN VERSION
+// components/Expenses.jsx 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Edit, Filter, TrendingDown, Download, ChevronLeft, ChevronRight } from 'lucide-react';

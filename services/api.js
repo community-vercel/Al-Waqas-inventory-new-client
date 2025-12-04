@@ -1,15 +1,12 @@
-// services/api.js
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_APP_API_URL || 'https://al-waqas-inventory-new-server.vercel.app/api';
 
-// Create axios instance
 const api = axios.create({
   baseURL: API_URL,
   timeout: 900000,
 });
 
-// Add token to requests
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -23,11 +20,9 @@ api.interceptors.request.use(
   }
 );
 
-// Handle responses and errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Only redirect on 401 if we're NOT on the login page
     if (error.response?.status === 401) {
       const isLoginPage = window.location.pathname === '/login';
       
@@ -36,7 +31,6 @@ api.interceptors.response.use(
         localStorage.removeItem('user');
         window.location.href = '/login?session=expired';
       }
-      // Do NOT redirect when on /login — just let the login component handle the error
     }
     
     return Promise.reject(error);
@@ -47,7 +41,6 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   getMe: () => api.get('/auth/me'),
-  // Add other auth endpoints as needed
   register: (userData) => api.post('/auth/register', userData),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
@@ -99,7 +92,7 @@ export const expensesAPI = {
 export const purchasesAPI = {
   getAll: (filters = {}) => api.get('/purchases', { params: filters }),
   create: (purchaseData) => api.post('/purchases', purchaseData),
-  update: (id, purchaseData) => api.put(`/purchases/${id}`, purchaseData), // Make sure this exists
+  update: (id, purchaseData) => api.put(`/purchases/${id}`, purchaseData),
   delete: (id) => api.delete(`/purchases/${id}`),
   getStats: (period = 'month') => api.get(`/purchases/stats?period=${period}`),
 };
