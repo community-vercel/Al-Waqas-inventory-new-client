@@ -150,15 +150,7 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-blue-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 font-medium mb-1">Net Profit</p>
-              <p className="text-xl font-semibold text-gray-800">Rs. {stats.totalProfit.toLocaleString()}</p>
-            </div>
-            <DollarSign size={32} className="text-blue-500" />
-          </div>
-        </div>
+       
 
         <div className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-purple-500">
           <div className="flex items-center justify-between">
