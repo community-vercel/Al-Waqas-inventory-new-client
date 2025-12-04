@@ -49,7 +49,6 @@ const Inventory = () => {
     setError('');
     const response = await inventoryAPI.getAll();
     
-    console.log('API Response:', response.data);
     
     const apiData = response.data?.data || [];
 
@@ -63,8 +62,7 @@ const Inventory = () => {
   return false;
 });
 
-    console.log('Showing Items:', displayInventory.length);
-    console.log('Sample Item:', displayInventory);
+
 
     if (displayInventory.length === 0) {
       setError('No inventory records found.');
@@ -167,16 +165,16 @@ const printInventory = (option = 'all', productId = '') => {
   let title = 'COMPLETE INVENTORY REPORT';
 
   if (option === 'low') {
-    dataToPrint = filtered.filter(item => item.quantity > 0 && item.quantity <= (item.minStockLevel || 5));
+    dataToPrint = filtered.filter(i => i.quantity > 0 && i.quantity <= (i.minStockLevel || 5));
     title = 'LOW STOCK REPORT (≤ 5)';
   } else if (option === 'out') {
-    dataToPrint = filtered.filter(item => item.quantity === 0);
+    dataToPrint = filtered.filter(i => i.quantity === 0);
     title = 'OUT OF STOCK REPORT';
   } else if (option === 'in') {
-    dataToPrint = filtered.filter(item => item.quantity > (item.minStockLevel || 5));
+    dataToPrint = filtered.filter(i => i.quantity > (i.minStockLevel || 5));
     title = 'IN STOCK REPORT';
   } else if (option === 'specific' && productId) {
-    dataToPrint = filtered.filter(item => item.product?._id === productId);
+    dataToPrint = filtered.filter(i => i.product?._id === productId);
     const name = dataToPrint[0]?.product?.name || 'Product';
     title = `${name.toUpperCase()} - STOCK REPORT`;
   }
@@ -191,29 +189,22 @@ const printInventory = (option = 'all', productId = '') => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  // Header
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.text('AL WAQAS PAINT & HARDWARE', pageWidth / 2, 15, { align: 'center' });
+  const sorted = [...dataToPrint].sort((a, b) =>
+    (a.product?.name || '').localeCompare(b.product?.name || '')
+  );
 
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'normal');
-  doc.text(title, pageWidth / 2, 23, { align: 'center' });
+  const totalValue = sorted.reduce((sum, item) => 
+    sum + ((item.quantity || 0) * (item.product?.purchasePrice || 0)), 0
+  );
 
-  doc.setFontSize(9);
-  doc.text(`Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, pageWidth / 2, 30, { align: 'center' });
-  doc.text(`Total Records: ${dataToPrint.length}`, pageWidth / 2, 35, { align: 'center' });
+  const generatedText = `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
 
-  // Sort by name
-  const sorted = [...dataToPrint].sort((a, b) => (a.product?.name || '').localeCompare(b.product?.name || ''));
-
-  // Prepare table rows
   const tableData = sorted.map(item => {
     const qty = item.quantity || 0;
     const price = item.product?.purchasePrice || 0;
     const value = qty * price;
     const colorName = item.color ? `${item.color.codeName} (${item.color.name})` : '—';
-    
+
     return [
       item.product?.name || 'Unknown',
       item.product?.code || '—',
@@ -226,15 +217,17 @@ const printInventory = (option = 'all', productId = '') => {
     ];
   });
 
-  // ULTRA TIGHT: 35+ items per page
+  // THIS IS THE KEY: ADD SUMMARY AFTER TABLE IS DONE
   autoTable(doc, {
     head: [['Product Name', 'Code', 'Color', 'Type', 'Stock', 'Min', 'Status', 'Value']],
     body: tableData,
-    startY: 40,
+    startY: 38,
     theme: 'grid',
     styles: {
-      fontSize: 7,           
-      cellPadding: 1.2,     
+      fontSize: 6.7,
+      cellPadding: 1.1,
+      lineWidth: 0.07,
+      lineColor: [220, 220, 220],
       overflow: 'linebreak',
       halign: 'center',
       valign: 'middle'
@@ -242,56 +235,90 @@ const printInventory = (option = 'all', productId = '') => {
     headStyles: {
       fillColor: [41, 128, 185],
       textColor: 255,
-      fontSize: 7.5,
+      fontSize: 7,
       fontStyle: 'bold'
     },
     columnStyles: {
-      0: { cellWidth: 62, halign: 'left' },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 48 },
-      3: { cellWidth: 22 },
-      4: { cellWidth: 18 },
-      5: { cellWidth: 16 },
-      6: { cellWidth: 22 },
-      7: { cellWidth: 32, halign: 'right' }
+      0: { cellWidth: 72, halign: 'left' },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 54 },
+      3: { cellWidth: 20 },
+      4: { cellWidth: 16 },
+      5: { cellWidth: 14 },
+      6: { cellWidth: 20 },
+      7: { cellWidth: 36, halign: 'right' }
     },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    margin: { top: 40, bottom: 15, left: 6, right: 6 },
+    margin: { top: 38, bottom: 8, left: 26, right: 8 },
+
     didDrawPage: (data) => {
-      // PAGE NUMBER - BOTTOM RIGHT
-      const pageCount = doc.internal.getNumberOfPages();
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.text(
-        `Page ${data.pageNumber} of ${pageCount}`,
-        pageWidth - 20,
-        pageHeight - 8,
-        { align: 'right' }
-      );
+      const page = data.pageNumber;
+
+      if (page === 1) {
+        doc.setFontSize(24);
+        doc.setFont('helvetica', 'bold');
+        doc.text('AL WAQAS PAINT & HARDWARE', pageWidth / 2, 14, { align: 'center' });
+
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'normal');
+        doc.text(title, pageWidth / 2, 22, { align: 'center' });
+
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text(`Generated from: inventory.alwaqaspaint.com • User:  Admin`, pageWidth / 2, 28, { align: 'center' });
+
+        data.settings.startY = 34;
+      } else {
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(41, 128, 185);
+        doc.text('AL WAQAS PAINT & HARDWARE', pageWidth / 2, 5, { align: 'center' });
+
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0);
+        doc.text(title, pageWidth / 2, 9, { align: 'center' });
+
+        data.settings.startY = 11;
+        data.settings.margin.top = 13;
+      }
+
+      doc.setFontSize(7.5);
+      doc.setTextColor(120);
+      doc.text(`Page ${page}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
     }
   });
 
-  // Summary
-  const finalY = doc.lastAutoTable.finalY + 10;
-  const totalQty = sorted.reduce((sum, i) => sum + (i.quantity || 0), 0);
-  const totalValue = sorted.reduce((sum, i) => sum + ((i.quantity || 0) * (i.product?.purchasePrice || 0)), 0);
+  // ADD SUMMARY AFTER TABLE — ON LAST PAGE OR NEW PAGE
+  const finalY = doc.lastAutoTable.finalY;
+  const spaceNeeded = 35; // space for 4 lines
+  const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
 
-  doc.setFontSize(10);
+  let summaryY = finalY + 15;
+
+  // If not enough space → add new page
+  if (summaryY + spaceNeeded > pageHeight) {
+    doc.addPage();
+    summaryY = 20;
+  }
+
+  const rightX = pageWidth - 10;
+
+  doc.setFontSize(9);
+  doc.setTextColor(0);
+  doc.text(generatedText, rightX, summaryY, { align: 'right' });
+  doc.text(`Total Records: ${sorted.length}`, rightX, summaryY + 6, { align: 'right' });
+
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('SUMMARY', 14, finalY);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text(`• Total Variants: ${sorted.length}`, 14, finalY + 7);
-  doc.text(`• Unique Products: ${new Set(sorted.map(i => i.product?.name)).size}`, 14, finalY + 12);
-  doc.text(`• Total Quantity: ${totalQty.toLocaleString()}`, 14, finalY + 17);
-  doc.text(`• Total Value: Rs. ${totalValue.toLocaleString()}`, 14, finalY + 22);
+  doc.setTextColor(0, 100, 0);
+  doc.text(`Total Value: Rs. ${totalValue.toLocaleString()}`, rightX, summaryY + 13, { align: 'right' });
 
   const fileName = `AlWaqas_Inventory_${option}_${new Date().toISOString().slice(0,10)}.pdf`;
   doc.save(fileName);
 
   setShowPrintModal(false);
-  setSuccess(`PDF Ready! ${sorted.length} items`);
-  setTimeout(() => setSuccess(''), 4000);
+  setSuccess(`PDF Generated! ${sorted.length} items • ${doc.internal.getNumberOfPages()} pages`);
+  setTimeout(() => setSuccess(''), 5000);
 };
 
   const handlePrint = () => {
