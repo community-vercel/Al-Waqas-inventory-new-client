@@ -248,7 +248,7 @@ const printInventory = (option = 'all', productId = '') => {
       6: { cellWidth: 20 },
       7: { cellWidth: 36, halign: 'right' }
     },
-    margin: { top: 38, bottom: 8, left: 26, right: 8 },
+    margin: { top: 38, bottom: 8, left: 20, right: 8 },
 
     didDrawPage: (data) => {
       const page = data.pageNumber;
