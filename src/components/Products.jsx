@@ -197,64 +197,52 @@ const Products = () => {
     setShowFilters(false);
   };
 
-  // SIMPLIFIED UPLOAD HANDLER
+  // FIXED UPLOAD HANDLER
   const handleCsvUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Close modal immediately before upload starts
+    setShowUploadModal(false);
+    
+    // Show loading state in the main upload button
     setUploadStatus('uploading');
-    setUploadMessage('Uploading and processing CSV file...');
-    setShowUploadModal(true);
+    setUploadMessage('Uploading CSV file...');
 
     const formData = new FormData();
     formData.append('csvFile', file);
 
     try {
-      // Remove timeout - let it take as long as needed
-      const res = await productsAPI.uploadCSV(formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      const imported = res.data.imported || 0;
+      const response = await productsAPI.uploadCSV(formData);
+      const imported = response.data.imported || 0;
       
-      setUploadStatus('success');
-      setUploadMessage(`Successfully imported ${imported} products!`);
-      
-      // Refresh products list
-      await fetchProducts();
       setSuccess(`Successfully imported ${imported} products!`);
+      fetchProducts();
       
     } catch (err) {
-      console.error('Upload error:', err);
+      // Set detailed error message
+      let errorMessage = 'Upload failed. Please try again.';
       
-      let msg = 'Upload failed. Please try again.';
-      
-      // Check if upload actually succeeded in background
-      const checkIfProductsAdded = async () => {
-        try {
-          await fetchProducts();
-          // If we can fetch products, maybe upload worked
-          msg = 'Upload completed! Products have been added.';
-          setUploadStatus('success');
-        } catch (fetchErr) {
-          // Real error
-          setUploadStatus('error');
-        }
-      };
-      
-      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-        // Timeout - check if products were added anyway
-        await checkIfProductsAdded();
-        if (uploadStatus !== 'success') {
-          msg = 'Upload took longer than expected. Please refresh to check if products were added.';
-        }
-      } else if (err.response?.data?.message) {
-        msg = err.response.data.message;
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.response?.data?.errors) {
+        // Handle validation errors
+        const errorMessages = err.response.data.errors
+          .map(err => `Row ${err.row}: ${err.error}`)
+          .join(', ');
+        errorMessage = `Validation errors: ${errorMessages}`;
+      } else if (err.message === 'Network Error') {
+        errorMessage = 'Network error. Please check your connection.';
+      } else if (err.code === 'ECONNABORTED') {
+        errorMessage = 'Upload timeout. Please try again with a smaller file.';
       }
       
-      setUploadMessage(msg);
+      setError(errorMessage);
     } finally {
-      e.target.value = '';
+      // Reset upload status
+      setUploadStatus('idle');
+      setUploadMessage('');
+      e.target.value = ''; // Clear file input
     }
   };
 
@@ -446,8 +434,21 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
           <button onClick={downloadAllPDF} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
             <Download size={18} /> All Products PDF
           </button>
-          <button onClick={() => setShowUploadModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
-            <Upload size={18} /> Upload CSV
+          <button 
+            onClick={() => setShowUploadModal(true)} 
+            disabled={uploadStatus === 'uploading'}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg flex items-center gap-2"
+          >
+            {uploadStatus === 'uploading' ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Uploading...
+              </>
+            ) : (
+              <>
+                <Upload size={18} /> Upload CSV
+              </>
+            )}
           </button>
           <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center gap-2">
             <Plus size={22} /> Add Product
@@ -826,92 +827,57 @@ Asian Paints Apex,dibbi,2582633540,3200000,15,,APEX-001`;
         )}
       </div>
 
-      {/* SIMPLIFIED UPLOAD MODAL */}
+      {/* UPLOAD MODAL */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-            <h3 className="text-2xl font-bold text-center mb-8">Upload Products CSV</h3>
-
-            {uploadStatus === 'idle' && (
-              <div className="space-y-6">
-                <div className="border-4 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 transition cursor-pointer">
-                  <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" id="csv-upload" />
-                  <label htmlFor="csv-upload" className="cursor-pointer">
-                    <FileText size={64} className="mx-auto text-gray-400 mb-4" />
-                    <p className="text-xl font-bold text-blue-600">Click to upload CSV</p>
-                    <p className="text-sm text-gray-500 mt-2">or drag and drop</p>
-                  </label>
-                </div>
-                <div className="flex justify-between">
-                  <button onClick={downloadTemplate} className="text-blue-600 font-bold hover:underline">Download Template</button>
-                  <button onClick={() => setShowUploadModal(false)} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg">Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {uploadStatus === 'uploading' && (
-              <div className="text-center space-y-6">
-                <Loader2 size={64} className="mx-auto animate-spin text-blue-600" />
-                <div>
-                  <p className="text-xl font-semibold text-gray-700">{uploadMessage}</p>
-                  <div className="mt-6">
-                    <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-600 animate-pulse"></div>
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-500 mt-4">
-                    Please wait, this may take a minute...
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold text-center flex-1">Upload Products CSV</h3>
+              <button 
+                onClick={() => setShowUploadModal(false)} 
+                className="text-gray-500 hover:text-gray-700 p-2"
+                disabled={uploadStatus === 'uploading'}
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="border-4 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 transition cursor-pointer">
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  onChange={handleCsvUpload} 
+                  className="hidden" 
+                  id="csv-upload" 
+                  disabled={uploadStatus === 'uploading'}
+                />
+                <label htmlFor="csv-upload" className="cursor-pointer block">
+                  <FileText size={64} className="mx-auto text-gray-400 mb-4" />
+                  <p className="text-xl font-bold text-blue-600">Click to upload CSV</p>
+                  <p className="text-sm text-gray-500 mt-2">or drag and drop</p>
+                  <p className="text-xs text-gray-400 mt-4">
+                    Required columns: name, type, purchasePrice, salePrice, discount, qty, code
                   </p>
-                </div>
+                </label>
               </div>
-            )}
-
-            {uploadStatus === 'success' && (
-              <div className="text-center space-y-6">
-                <CheckCircle size={80} className="mx-auto text-green-500" />
-                <p className="text-2xl font-bold text-green-600">{uploadMessage}</p>
-                <p className="text-gray-600">Products have been added successfully!</p>
-                <div className="mt-6">
-                  <button 
-                    onClick={() => {
-                      setShowUploadModal(false);
-                      setUploadStatus('idle');
-                      setUploadMessage('');
-                    }} 
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold"
-                  >
-                    Close
-                  </button>
-                </div>
+              <div className="flex justify-between">
+                <button 
+                  onClick={downloadTemplate} 
+                  className="text-blue-600 font-bold hover:underline"
+                  disabled={uploadStatus === 'uploading'}
+                >
+                  Download Template
+                </button>
+                <button 
+                  onClick={() => setShowUploadModal(false)} 
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg"
+                  disabled={uploadStatus === 'uploading'}
+                >
+                  Cancel
+                </button>
               </div>
-            )}
-
-            {uploadStatus === 'error' && (
-              <div className="text-center space-y-6">
-                <AlertCircle size={80} className="mx-auto text-yellow-500" />
-                <p className="text-xl font-bold text-yellow-600">Upload Status</p>
-                <p className="text-gray-600">{uploadMessage}</p>
-                <div className="mt-6 space-y-3">
-                  <button 
-                    onClick={fetchProducts}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 justify-center w-full"
-                  >
-                    <RefreshCw size={18} />
-                    Refresh Products List
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setShowUploadModal(false);
-                      setUploadStatus('idle');
-                      setUploadMessage('');
-                    }} 
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg w-full"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
       )}

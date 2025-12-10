@@ -20,6 +20,7 @@ const Purchases = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+const [deletingId, setDeletingId] = useState(null);
 
   // Multi-product purchase
   const [selectedSupplier, setSelectedSupplier] = useState('');
@@ -306,21 +307,45 @@ const Purchases = () => {
     }
   };
 
-  const handleDeletePurchase = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this purchase? This action cannot be undone.')) {
-      return;
-    }
+ // Replace the existing handleDeletePurchase function with this improved version:
+const handleDeletePurchase = async (id) => {
+  if (!window.confirm('Are you sure you want to delete this purchase? This will also update inventory. This action cannot be undone.')) {
+    return;
+  }
 
-    try {
-      await purchasesAPI.delete(id);
-      setSuccess('Purchase deleted successfully!');
-      setTimeout(() => setSuccess(''), 2000);
-      fetchPurchases();
+  try {
+    setLoading(true); // Show loading state
+    const response = await purchasesAPI.delete(id);
+    
+    if (response.data && response.data.success) {
+      setSuccess(response.data.message || 'Purchase deleted successfully!');
+      
+      // Remove the deleted purchase from state
+      setPurchases(prev => prev.filter(p => p._id !== id));
+      setFilteredPurchases(prev => prev.filter(p => p._id !== id));
+      
+      // Show success message for a few seconds
+      setTimeout(() => setSuccess(''), 3000);
+      
+      // Trigger inventory update
       window.dispatchEvent(new Event('inventoryShouldUpdate'));
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete purchase');
+      
+      // Refresh purchases to ensure data consistency
+      await fetchPurchases();
+    } else {
+      setError(response.data?.message || 'Failed to delete purchase');
     }
-  };
+  } catch (err) {
+    console.error('Delete purchase error:', err);
+    setError(
+      err.response?.data?.message || 
+      err.response?.data?.error || 
+      'Failed to delete purchase. Please try again.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   // PAGINATION LOGIC
   const totalPages = Math.ceil(filteredPurchases.length / itemsPerPage);
@@ -931,24 +956,33 @@ const Purchases = () => {
                       <td className="px-6 py-4 font-bold text-green-600">
                         Rs. {p.totalAmount?.toLocaleString()}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEdit(p)}
-                            className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg"
-                            title="Edit"
-                          >
-                            <Edit size={18} />
-                          </button>
-                          <button
-                            onClick={() => handleDeletePurchase(p._id)}
-                            className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg"
-                            title="Delete"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </td>
+                     <td className="px-6 py-4">
+  <div className="flex gap-2">
+    <button
+      onClick={() => handleEdit(p)}
+      className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded-lg"
+      title="Edit"
+      disabled={loading}
+    >
+      <Edit size={18} />
+    </button>
+    {/* <button
+      onClick={() => handleDeletePurchase(p._id)}
+      className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg flex items-center gap-1"
+      title="Delete"
+      disabled={loading || deletingId === p._id}
+    >
+      {deletingId === p._id ? (
+        <>
+          <Loader2 size={16} className="animate-spin" />
+          Deleting...
+        </>
+      ) : (
+        <Trash2 size={18} />
+      )}
+    </button> */}
+  </div>
+</td>
                     </tr>
                   ))}
                 </tbody>

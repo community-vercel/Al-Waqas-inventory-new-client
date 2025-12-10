@@ -97,95 +97,93 @@ const Colors = () => {
   };
 
   const addColor = async () => {
-  if (!newColor.name.trim() || !newColor.codeName.trim() || !validateHexCode(newColor.hexCode)) {
-    setError('Please fill all fields correctly');
-    return;
-  }
-
-  // ONLY check for duplicate hex code before submitting
-  if (isHexCodeDuplicate(newColor.hexCode)) {
-    const existing = colors.find(color => 
-      color.hexCode.toLowerCase() === newColor.hexCode.toLowerCase()
-    );
-    
-    if (existing) {
-      setSearchTerm(existing.hexCode);
-      setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existing.name}" (${existing.codeName})`);
+    if (!newColor.name.trim() || !newColor.codeName.trim() || !validateHexCode(newColor.hexCode)) {
+      setError('Please fill all fields correctly');
+      return;
     }
-    return;
-  }
 
-  try {
-    setSubmitting(true);
-    setError('');
-    await colorsAPI.create(newColor);
-    setNewColor({ name: '', codeName: '', hexCode: '#000000' });
-    setHexInput('');
-    setHexStatus('');
-    setExistingColor(null);
-    setSuccess('Color added successfully!');
-    setTimeout(() => setSuccess(''), 3000);
-    fetchColors();
-  } catch (error) {
-    if (error.response?.data?.message?.includes('hex code')) {
-      // Server-side duplicate check failed for hex code
-      await fetchColors();
-      const existingColor = colors.find(color => 
+    // ONLY check for duplicate hex code before submitting
+    if (isHexCodeDuplicate(newColor.hexCode)) {
+      const existing = colors.find(color => 
         color.hexCode.toLowerCase() === newColor.hexCode.toLowerCase()
       );
       
-      if (existingColor) {
-        setSearchTerm(existingColor.hexCode);
-        setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existingColor.name}" (${existingColor.codeName})`);
-      } else {
-        setError('Color with this hex code already exists. Please use a different hex code.');
+      if (existing) {
+        setSearchTerm(existing.hexCode);
+        setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existing.name}" (${existing.codeName})`);
       }
-    } else {
-      setError(error.response?.data?.message || 'Failed to add color');
+      return;
     }
-  } finally {
-    setSubmitting(false);
-  }
-};
 
-const updateColor = async () => {
-  if (!editingColor.name.trim() || !editingColor.codeName.trim() || !validateHexCode(editingColor.hexCode)) {
-    setError('Please fill all fields correctly');
-    return;
-  }
-
-  // ONLY check for duplicate hex code before updating (excluding current color)
-  if (isHexCodeDuplicate(editingColor.hexCode, editingColor._id)) {
-    setError(`Color with hex code ${editingColor.hexCode.toUpperCase()} already exists!`);
-    return;
-  }
-
-  try {
-    setSubmitting(true);
-    setError('');
-    await colorsAPI.update(editingColor._id, {
-      name: editingColor.name,
-      codeName: editingColor.codeName,
-      hexCode: editingColor.hexCode
-    });
-    setEditingColor(null);
-    setHexInput('');
-    setHexStatus('');
-    setSuccess('Color updated successfully!');
-    setTimeout(() => setSuccess(''), 3000);
-    fetchColors();
-  } catch (error) {
-    if (error.response?.data?.message?.includes('hex code')) {
-      setError('Color with this hex code already exists. Please use a different hex code.');
-    } else {
-      setError(error.response?.data?.message || 'Failed to update color');
+    try {
+      setSubmitting(true);
+      setError('');
+      await colorsAPI.create(newColor);
+      setNewColor({ name: '', codeName: '', hexCode: '#000000' });
+      setHexInput('');
+      setHexStatus('');
+      setExistingColor(null);
+      setSuccess('Color added successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+      fetchColors();
+    } catch (error) {
+      if (error.response?.data?.message?.includes('hex code')) {
+        // Server-side duplicate check failed for hex code
+        await fetchColors();
+        const existingColor = colors.find(color => 
+          color.hexCode.toLowerCase() === newColor.hexCode.toLowerCase()
+        );
+        
+        if (existingColor) {
+          setSearchTerm(existingColor.hexCode);
+          setError(`Color with hex code ${newColor.hexCode.toUpperCase()} already exists! It's named "${existingColor.name}" (${existingColor.codeName})`);
+        } else {
+          setError('Color with this hex code already exists. Please use a different hex code.');
+        }
+      } else {
+        setError(error.response?.data?.message || 'Failed to add color');
+      }
+    } finally {
+      setSubmitting(false);
     }
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
 
- 
+  const updateColor = async () => {
+    if (!editingColor.name.trim() || !editingColor.codeName.trim() || !validateHexCode(editingColor.hexCode)) {
+      setError('Please fill all fields correctly');
+      return;
+    }
+
+    // ONLY check for duplicate hex code before updating (excluding current color)
+    if (isHexCodeDuplicate(editingColor.hexCode, editingColor._id)) {
+      setError(`Color with hex code ${editingColor.hexCode.toUpperCase()} already exists!`);
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError('');
+      await colorsAPI.update(editingColor._id, {
+        name: editingColor.name,
+        codeName: editingColor.codeName,
+        hexCode: editingColor.hexCode
+      });
+      setEditingColor(null);
+      setHexInput('');
+      setHexStatus('');
+      setSuccess('Color updated successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+      fetchColors();
+    } catch (error) {
+      if (error.response?.data?.message?.includes('hex code')) {
+        setError('Color with this hex code already exists. Please use a different hex code.');
+      } else {
+        setError(error.response?.data?.message || 'Failed to update color');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const deleteColor = async (id) => {
     if (!window.confirm('Are you sure you want to delete this color?')) return;
@@ -209,9 +207,13 @@ const updateColor = async () => {
     const isValidCSV = file.name.endsWith('.csv') || file.type === 'text/csv' || file.type === 'application/vnd.ms-excel';
     if (!isValidCSV) {
       setError('Please upload a valid CSV file');
+      e.target.value = ''; // Clear file input
       return;
     }
 
+    // Close modal immediately before upload starts
+    setShowUploadModal(false);
+    
     try {
       setCsvUploading(true);
       setError('');
@@ -222,20 +224,27 @@ const updateColor = async () => {
       const response = await colorsAPI.uploadCSV(formData);
       
       setSuccess(`Successfully imported ${response.data.summary.imported} colors!`);
-      setShowUploadModal(false);
       fetchColors();
     } catch (error) {
+      // Set error message based on API response
+      let errorMessage = 'Upload failed. Please try again.';
+      
       if (error.response?.data?.message) {
-        setError(`Upload failed: ${error.response.data.message}`);
+        errorMessage = error.response.data.message;
       } else if (error.response?.data?.errors) {
-        const errorMessages = error.response.data.errors.map(err => `Row ${err.row}: ${err.error}`).join(', ');
-        setError(`Validation errors: ${errorMessages}`);
-      } else {
-        setError('Upload failed. Please check the console for details.');
+        // Handle validation errors
+        const errorMessages = error.response.data.errors
+          .map(err => `Row ${err.row}: ${err.error}`)
+          .join(', ');
+        errorMessage = `Validation errors: ${errorMessages}`;
+      } else if (error.message === 'Network Error') {
+        errorMessage = 'Network error. Please check your connection.';
       }
+      
+      setError(errorMessage);
     } finally {
       setCsvUploading(false);
-      e.target.value = '';
+      e.target.value = ''; // Clear file input
     }
   };
 
@@ -331,8 +340,21 @@ const updateColor = async () => {
           <button onClick={downloadTemplate} className="bg-gray-600 hover:bg-gray-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
             <Download size={18} /> Template
           </button>
-          <button onClick={() => setShowUploadModal(true)} className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg flex items-center gap-2">
-            <Upload size={18} /> Upload CSV
+          <button 
+            onClick={() => setShowUploadModal(true)} 
+            disabled={csvUploading}
+            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg flex items-center gap-2"
+          >
+            {csvUploading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Uploading...
+              </>
+            ) : (
+              <>
+                <Upload size={18} /> Upload CSV
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -369,138 +391,138 @@ const updateColor = async () => {
       </div>
 
       {/* Add/Edit Form */}
-<div className="bg-white rounded-lg shadow-md p-6 mb-6">
-  <h2 className="text-xl font-semibold mb-6">{editingColor ? 'Edit Color' : 'Add New Color'}</h2>
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-    {/* Color Name Input */}
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">Color Name *</label>
-      <input
-        type="text"
-        placeholder="e.g., Fire Red"
-        value={editingColor ? editingColor.name : newColor.name}
-        onChange={e => editingColor ? setEditingColor({ ...editingColor, name: e.target.value }) : setNewColor({ ...newColor, name: e.target.value })}
-        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-      />
-    </div>
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-6">{editingColor ? 'Edit Color' : 'Add New Color'}</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Color Name Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Color Name *</label>
+            <input
+              type="text"
+              placeholder="e.g., Fire Red"
+              value={editingColor ? editingColor.name : newColor.name}
+              onChange={e => editingColor ? setEditingColor({ ...editingColor, name: e.target.value }) : setNewColor({ ...newColor, name: e.target.value })}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
 
-    {/* Code Name Input */}
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">Code Name *</label>
-      <input
-        type="text"
-        placeholder="e.g., FR"
-        value={editingColor ? editingColor.codeName : newColor.codeName}
-        onChange={e => {
-          const val = e.target.value.toUpperCase().slice(0, 6);
-          editingColor ? setEditingColor({ ...editingColor, codeName: val }) : setNewColor({ ...newColor, codeName: val });
-        }}
-        className="w-full px-4 py-3 text-center font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        maxLength={6}
-      />
-    </div>
+          {/* Code Name Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Code Name *</label>
+            <input
+              type="text"
+              placeholder="e.g., FR"
+              value={editingColor ? editingColor.codeName : newColor.codeName}
+              onChange={e => {
+                const val = e.target.value.toUpperCase().slice(0, 6);
+                editingColor ? setEditingColor({ ...editingColor, codeName: val }) : setNewColor({ ...newColor, codeName: val });
+              }}
+              className="w-full px-4 py-3 text-center font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              maxLength={6}
+            />
+          </div>
 
-    {/* Hex Code Input */}
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">Hex Code *</label>
-      <div className="flex items-center gap-3">
-        {/* Hex Input Field */}
-        <div className="flex-1 relative">
-          <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-mono">#</span>
-          <input
-            type="text"
-            placeholder="FF0000"
-            value={hexInput}
-            onChange={e => handleHexInputChange(e.target.value)}
-            className={`w-full pl-10 pr-4 py-3 font-mono text-center border rounded-lg focus:outline-none focus:ring-2 ${
-              hexStatus === 'valid' 
-                ? 'border-green-500 focus:ring-green-500 focus:border-green-500' 
-                : hexStatus === 'duplicate' || hexStatus === 'invalid' 
-                ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
-            }`}
-            maxLength={8}
-          />
+          {/* Hex Code Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Hex Code *</label>
+            <div className="flex items-center gap-3">
+              {/* Hex Input Field */}
+              <div className="flex-1 relative">
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-mono">#</span>
+                <input
+                  type="text"
+                  placeholder="FF0000"
+                  value={hexInput}
+                  onChange={e => handleHexInputChange(e.target.value)}
+                  className={`w-full pl-10 pr-4 py-3 font-mono text-center border rounded-lg focus:outline-none focus:ring-2 ${
+                    hexStatus === 'valid' 
+                      ? 'border-green-500 focus:ring-green-500 focus:border-green-500' 
+                      : hexStatus === 'duplicate' || hexStatus === 'invalid' 
+                      ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                      : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                  }`}
+                  maxLength={8}
+                />
+              </div>
+              
+              {/* Color Picker */}
+              <div className="flex flex-col items-center gap-2">
+                <input
+                  type="color"
+                  value={editingColor ? editingColor.hexCode : newColor.hexCode}
+                  onChange={e => editingColor ? setEditingColor({ ...editingColor, hexCode: e.target.value }) : handleColorPickerChange(e.target.value)}
+                  className="w-16 h-16 rounded-lg cursor-pointer border-2 border-gray-300"
+                />
+              </div>
+            </div>
+            
+            {/* Real-time hex code status */}
+            <div className={`mt-2 text-xs flex items-center gap-1 ${statusInfo.className}`}>
+              {statusInfo.icon}
+              <span>{statusInfo.message}</span>
+              {hexStatus === 'duplicate' && (
+                <button
+                  onClick={navigateToExistingColor}
+                  className="ml-2 text-blue-600 hover:text-blue-800 underline text-xs"
+                >
+                  View existing color
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-        
-        {/* Color Picker */}
-        <div className="flex flex-col items-center gap-2">
-          <input
-            type="color"
-            value={editingColor ? editingColor.hexCode : newColor.hexCode}
-            onChange={e => editingColor ? setEditingColor({ ...editingColor, hexCode: e.target.value }) : handleColorPickerChange(e.target.value)}
-            className="w-16 h-16 rounded-lg cursor-pointer border-2 border-gray-300"
-          />
+
+        {/* Preview Section */}
+        <div className="mt-6 p-4 bg-gray-50 rounded-lg flex items-center gap-6">
+          <div 
+            className="w-20 h-20 rounded-lg shadow-lg border-4 border-white flex-shrink-0" 
+            style={{ backgroundColor: editingColor ? editingColor.hexCode : newColor.hexCode }}
+          ></div>
+          <div>
+            <p className="text-sm font-medium text-gray-600">Preview</p>
+            <p className="text-lg font-mono font-semibold text-gray-800">
+              {(editingColor ? editingColor.hexCode : newColor.hexCode).toUpperCase()}
+            </p>
+            <p className="text-sm text-gray-500">
+              {editingColor 
+                ? `${editingColor.name} (${editingColor.codeName})` 
+                : newColor.name 
+                  ? `${newColor.name} (${newColor.codeName})` 
+                  : 'Enter color details above'
+              }
+            </p>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="mt-6 flex gap-3">
+          {editingColor ? (
+            <>
+              <button 
+                onClick={updateColor} 
+                disabled={submitting || hexStatus === 'duplicate' || hexStatus === 'invalid'}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+              >
+                {submitting ? 'Updating...' : 'Update Color'}
+              </button>
+              <button 
+                onClick={() => setEditingColor(null)} 
+                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button 
+              onClick={addColor} 
+              disabled={submitting || hexStatus === 'duplicate' || hexStatus === 'invalid' || !newColor.name.trim() || !newColor.codeName.trim()}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
+            >
+              {submitting ? 'Adding...' : 'Add Color'}
+            </button>
+          )}
         </div>
       </div>
-      
-      {/* Real-time hex code status */}
-      <div className={`mt-2 text-xs flex items-center gap-1 ${statusInfo.className}`}>
-        {statusInfo.icon}
-        <span>{statusInfo.message}</span>
-        {hexStatus === 'duplicate' && (
-          <button
-            onClick={navigateToExistingColor}
-            className="ml-2 text-blue-600 hover:text-blue-800 underline text-xs"
-          >
-            View existing color
-          </button>
-        )}
-      </div>
-    </div>
-  </div>
-
-  {/* Preview Section */}
-  <div className="mt-6 p-4 bg-gray-50 rounded-lg flex items-center gap-6">
-    <div 
-      className="w-20 h-20 rounded-lg shadow-lg border-4 border-white flex-shrink-0" 
-      style={{ backgroundColor: editingColor ? editingColor.hexCode : newColor.hexCode }}
-    ></div>
-    <div>
-      <p className="text-sm font-medium text-gray-600">Preview</p>
-      <p className="text-lg font-mono font-semibold text-gray-800">
-        {(editingColor ? editingColor.hexCode : newColor.hexCode).toUpperCase()}
-      </p>
-      <p className="text-sm text-gray-500">
-        {editingColor 
-          ? `${editingColor.name} (${editingColor.codeName})` 
-          : newColor.name 
-            ? `${newColor.name} (${newColor.codeName})` 
-            : 'Enter color details above'
-        }
-      </p>
-    </div>
-  </div>
-
-  {/* Action Buttons */}
-  <div className="mt-6 flex gap-3">
-    {editingColor ? (
-      <>
-        <button 
-          onClick={updateColor} 
-          disabled={submitting || hexStatus === 'duplicate' || hexStatus === 'invalid'}
-          className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-        >
-          {submitting ? 'Updating...' : 'Update Color'}
-        </button>
-        <button 
-          onClick={() => setEditingColor(null)} 
-          className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-        >
-          Cancel
-        </button>
-      </>
-    ) : (
-      <button 
-        onClick={addColor} 
-        disabled={submitting || hexStatus === 'duplicate' || hexStatus === 'invalid' || !newColor.name.trim() || !newColor.codeName.trim()}
-        className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200"
-      >
-        {submitting ? 'Adding...' : 'Add Color'}
-      </button>
-    )}
-  </div>
-</div>
 
       {/* Colors Grid */}
       <div className="bg-white rounded-lg shadow-md">
@@ -600,20 +622,48 @@ const updateColor = async () => {
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-semibold">Upload Colors CSV</h3>
-              <button onClick={() => setShowUploadModal(false)} className="text-gray-500 hover:text-gray-700">
+              <button 
+                onClick={() => setShowUploadModal(false)} 
+                disabled={csvUploading}
+                className="text-gray-500 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <X size={24} />
               </button>
             </div>
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
               <FileText size={48} className="mx-auto text-gray-400 mb-4" />
               <p className="text-gray-600 mb-4">Drop your CSV file here or click to browse</p>
-              <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" id="csv-upload" />
-              <label htmlFor="csv-upload" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg cursor-pointer inline-block">
-                {csvUploading ? 'Uploading...' : 'Choose File'}
+              <p className="text-sm text-gray-500 mb-4">
+                Required columns: <span className="font-mono">name, codeName, hexCode</span>
+              </p>
+              <input 
+                type="file" 
+                accept=".csv" 
+                onChange={handleCsvUpload} 
+                className="hidden" 
+                id="csv-upload" 
+                disabled={csvUploading}
+              />
+              <label 
+                htmlFor="csv-upload" 
+                className={`${csvUploading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'} text-white px-6 py-3 rounded-lg inline-block`}
+              >
+                {csvUploading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Uploading...
+                  </div>
+                ) : (
+                  'Choose File'
+                )}
               </label>
             </div>
             <div className="mt-6 text-center">
-              <button onClick={downloadTemplate} className="text-blue-600 hover:underline">
+              <button 
+                onClick={downloadTemplate} 
+                className="text-blue-600 hover:underline disabled:text-gray-400"
+                disabled={csvUploading}
+              >
                 Download Template
               </button>
             </div>
