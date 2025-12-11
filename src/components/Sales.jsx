@@ -42,7 +42,9 @@ const Sales = () => {
   });
 
   useEffect(() => { fetchInitialData(); }, []);
-  useEffect(() => { if (selectedDate) fetchSalesByDate(selectedDate); }, [selectedDate]);
+  useEffect(() => { 
+    if (selectedDate) fetchSalesByDate(selectedDate); 
+  }, [selectedDate]);
   useEffect(() => { calculateSaleSummary(); }, [saleItems]);
 
   const fetchInitialData = async () => {
@@ -59,6 +61,7 @@ const Sales = () => {
       const data = res.data.data || [];
       setSales(data);
       setFilteredSales(data);
+      setCurrentPage(1); // Reset to first page when date changes
 
       const summary = {
         totalSales: data.length,
@@ -69,10 +72,11 @@ const Sales = () => {
       setDailySummary(summary);
     } catch (err) {
       setError('Failed to load sales');
-      setSales([]); setFilteredSales([]);
+      setSales([]); 
+      setFilteredSales([]);
+      setCurrentPage(1);
     } finally {
       setLoading(false);
-      setCurrentPage(1);
     }
   };
 
@@ -121,8 +125,46 @@ const Sales = () => {
     );
   }, [filteredSales, salesSearchTerm]);
 
+  // Reset current page when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [salesSearchTerm]);
+
+  // Reset current page when filtered sales changes (date change)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filteredSales]);
+
   const totalPages = Math.ceil(searchedSales.length / itemsPerPage);
-  const currentSales = searchedSales.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const currentSales = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return searchedSales.slice(startIndex, endIndex);
+  }, [searchedSales, currentPage, itemsPerPage]);
+
+  // Calculate pagination numbers to display
+  const paginationNumbers = useMemo(() => {
+    const maxPagesToShow = 5;
+    
+    if (totalPages <= maxPagesToShow) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    
+    const half = Math.floor(maxPagesToShow / 2);
+    let start = Math.max(1, currentPage - half);
+    let end = Math.min(totalPages, start + maxPagesToShow - 1);
+    
+    // Adjust if we're near the end
+    if (end - start + 1 < maxPagesToShow) {
+      start = Math.max(1, end - maxPagesToShow + 1);
+    }
+    
+    const pages = [];
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  }, [currentPage, totalPages]);
 
   // AUTO APPLY DISCOUNT FROM PRODUCT
   const handleProductSelect = (product) => {
@@ -137,7 +179,7 @@ const Sales = () => {
         setError(`Only ${exists.maxQuantity} in stock`);
       }
     } else {
-      const productDiscount = product.discount || 0; // This comes from your Product API
+      const productDiscount = product.discount || 0;
       const discountedPrice = product.salePrice * (1 - productDiscount / 100);
 
       setSaleItems([...saleItems, {
@@ -187,7 +229,7 @@ const Sales = () => {
           product: item.product,
           quantity: item.quantity,
           unitPrice: item.salePrice,
-          discount: item.discount, // This will be from product.discount
+          discount: item.discount,
           date: selectedDate
         })
       ));
@@ -455,10 +497,7 @@ const Sales = () => {
                   type="text"
                   placeholder="Search in sales..."
                   value={salesSearchTerm}
-                  onChange={e => {
-                    setSalesSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
+                  onChange={e => setSalesSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm focus:border-blue-500 outline-none"
                 />
               </div>
@@ -485,7 +524,7 @@ const Sales = () => {
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
+                  <tbody className="divide-y" key={`sales-${selectedDate}-${currentPage}`}>
                     {currentSales.map(s => (
                       <tr key={s._id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-xs text-gray-600">
@@ -502,9 +541,9 @@ const Sales = () => {
                         </td>
                         <td className="px-4 py-3 text-right font-bold text-green-600">PKR {s.totalAmount.toLocaleString()}</td>
                         <td className="px-4 py-3 text-center">
-                          {/* <button onClick={() => handleDeleteSale(s._id)} className="text-red-600 hover:text-red-800">
+                          <button onClick={() => handleDeleteSale(s._id)} className="text-red-600 hover:text-red-800">
                             <Trash2 className="w-4 h-4" />
-                          </button> */}
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -518,25 +557,33 @@ const Sales = () => {
                     Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, searchedSales.length)} of {searchedSales.length} entries
                   </p>
                   <div className="flex items-center gap-2 mt-3 sm:mt-0">
-                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-                      className="px-3 py-1.5 border rounded hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1">
+                    <button 
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                      disabled={currentPage === 1}
+                      className="px-3 py-1.5 border rounded hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1"
+                    >
                       <ChevronLeft className="w-4 h-4" /> Prev
                     </button>
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum = i + 1;
-                      if (totalPages > 5 && currentPage > 3) {
-                        pageNum = currentPage - 2 + i;
-                        if (pageNum > totalPages) pageNum = totalPages;
-                      }
-                      return pageNum <= totalPages ? (
-                        <button key={pageNum} onClick={() => setCurrentPage(pageNum)}
-                          className={`px-3 py-1.5 rounded ${currentPage === pageNum ? 'bg-blue-600 text-white' : 'border hover:bg-gray-100'}`}>
-                          {pageNum}
-                        </button>
-                      ) : null;
-                    }).filter(Boolean)}
-                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
-                      className="px-3 py-1.5 border rounded hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1">
+                    
+                    {paginationNumbers.map(pageNum => (
+                      <button 
+                        key={pageNum} 
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 py-1.5 rounded min-w-[40px] ${
+                          currentPage === pageNum 
+                            ? 'bg-blue-600 text-white' 
+                            : 'border hover:bg-gray-100'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                    
+                    <button 
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1.5 border rounded hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1"
+                    >
                       Next <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
