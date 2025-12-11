@@ -31,7 +31,7 @@ const Sales = () => {
 
   const [salesSearchTerm, setSalesSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 10; // CHANGED TO 5 ITEMS PER PAGE
 
   const [dailySummary, setDailySummary] = useState({
     totalSales: 0, totalQuantity: 0, totalAmount: 0, totalDiscount: 0
@@ -142,9 +142,9 @@ const Sales = () => {
     return searchedSales.slice(startIndex, endIndex);
   }, [searchedSales, currentPage, itemsPerPage]);
 
-  // Calculate pagination numbers to display
+  // Calculate pagination numbers to display - SHOW ONLY 5 PAGE BUTTONS
   const paginationNumbers = useMemo(() => {
-    const maxPagesToShow = 5;
+    const maxPagesToShow = 5; // CHANGED TO SHOW ONLY 5 PAGE BUTTONS
     
     if (totalPages <= maxPagesToShow) {
       return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -555,6 +555,7 @@ const Sales = () => {
                 <div className="border-t px-4 py-3 bg-gray-50 flex flex-col sm:flex-row items-center justify-between text-sm">
                   <p className="text-gray-600">
                     Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, searchedSales.length)} of {searchedSales.length} entries
+                    <span className="ml-2">(Page {currentPage} of {totalPages})</span>
                   </p>
                   <div className="flex items-center gap-2 mt-3 sm:mt-0">
                     <button 
@@ -565,6 +566,22 @@ const Sales = () => {
                       <ChevronLeft className="w-4 h-4" /> Prev
                     </button>
                     
+                    {/* Show First Page Button if not in first set */}
+                    {paginationNumbers[0] > 1 && (
+                      <>
+                        <button 
+                          onClick={() => setCurrentPage(1)}
+                          className="px-3 py-1.5 border rounded hover:bg-gray-100"
+                        >
+                          1
+                        </button>
+                        {paginationNumbers[0] > 2 && (
+                          <span className="px-2">...</span>
+                        )}
+                      </>
+                    )}
+                    
+                    {/* Show Page Numbers */}
                     {paginationNumbers.map(pageNum => (
                       <button 
                         key={pageNum} 
@@ -578,6 +595,21 @@ const Sales = () => {
                         {pageNum}
                       </button>
                     ))}
+                    
+                    {/* Show Last Page Button if not in last set */}
+                    {paginationNumbers[paginationNumbers.length - 1] < totalPages && (
+                      <>
+                        {paginationNumbers[paginationNumbers.length - 1] < totalPages - 1 && (
+                          <span className="px-2">...</span>
+                        )}
+                        <button 
+                          onClick={() => setCurrentPage(totalPages)}
+                          className="px-3 py-1.5 border rounded hover:bg-gray-100"
+                        >
+                          {totalPages}
+                        </button>
+                      </>
+                    )}
                     
                     <button 
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
