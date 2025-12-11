@@ -102,7 +102,11 @@ export const purchasesAPI = {
 export const salesAPI = {
   // Get all sales with filters (default: today's sales)
   getAll: (params = {}) => api.get('/sales', { params }),
-  
+  // ADD THIS NEW ONE
+  getAllSalesForDate: (date) => {
+    const formatted = new Date(date).toISOString().split('T')[0];
+    return api.get(`/sales/daily-all?date=${formatted}`);
+  },
   // Get sales for specific date (YYYY-MM-DD format)
   getByDate: (date) => {
     // Format date to YYYY-MM-DD if needed
