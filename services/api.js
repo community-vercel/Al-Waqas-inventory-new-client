@@ -98,14 +98,62 @@ export const purchasesAPI = {
 };
 
 
-// Sales API
+// Sales API - UPDATED to match backend routes
 export const salesAPI = {
-  getAll: (filters = {}) => api.get('/sales', { params: filters }),
+  // Get all sales with filters (default: today's sales)
+  getAll: (params = {}) => api.get('/sales', { params }),
+  
+  // Get sales for specific date (YYYY-MM-DD format)
+  getByDate: (date) => {
+    // Format date to YYYY-MM-DD if needed
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+    return api.get(`/sales/daily/${formattedDate}`);
+  },
+  
+  // Get daily summary statistics
+  getDailySummary: (date) => {
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+    return api.get(`/sales/summary/${formattedDate}`);
+  },
+  
+  // Get sales by date range
+  getByDateRange: (startDate, endDate) => 
+    api.get('/sales/date-range', { 
+      params: { 
+        startDate: new Date(startDate).toISOString().split('T')[0],
+        endDate: new Date(endDate).toISOString().split('T')[0]
+      } 
+    }),
+  
+  // Create single sale (no customer name needed)
   create: (saleData) => api.post('/sales', saleData),
+  
+  // Create multiple sales at once
+  createBulk: (saleItems) => api.post('/sales/bulk', saleItems),
+  
+  // Delete sale
   delete: (id) => api.delete(`/sales/${id}`),
-  getStats: (period = 'month') => api.get(`/sales/stats?period=${period}`),
+  
+  // Get sales statistics
+  getStats: (period = 'today') => api.get('/sales/stats', { params: { period } }),
+  
+  // Utility method to get today's sales specifically
+  getTodaySales: () => {
+    const today = new Date().toISOString().split('T')[0];
+    return api.get(`/sales/daily/${today}`);
+  },
+  
+  // Utility method to get yesterday's sales
+  getYesterdaySales: () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateStr = yesterday.toISOString().split('T')[0];
+    return api.get(`/sales/daily/${dateStr}`);
+  },
+  
+  // Simple get sales with default params (for backward compatibility)
+  getSales: (params = {}) => api.get('/sales', { params })
 };
-
 // contact API -- customer and suppliers
 export const contactsAPI = {
   getAll: (filters = {}) => api.get('/contacts', { params: filters }),
@@ -123,5 +171,8 @@ export const contactsAPI = {
 };
 // Health check
 export const healthCheck = () => api.get('/health');
-
+export const ledgerAPI = {
+  getAll: (filters = {}) => api.get('/ledgers', { params: filters }),
+  get: (id) => api.get(`/ledgers/${id}`),
+}
 export default api;
