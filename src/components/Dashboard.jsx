@@ -16,7 +16,8 @@ import {
   User,
   Mail,
   ChevronLeft,
-  ChevronRight
+  Wallet,
+  ChevronRight,BookOpenCheck 
 } from 'lucide-react';
 
 const Dashboard = () => {
@@ -30,10 +31,12 @@ const Dashboard = () => {
     { path: '/colors', icon: Palette, label: 'Colors' },
     { path: '/products', icon: Package, label: 'Products' },
     { path: '/inventory', icon: Warehouse, label: 'Stock' },
-    { path: '/expenses', icon: DollarSign, label: 'Expenses' },
+    { path: '/expenses', icon: Wallet, label: 'Shop Expenses' },
     { path: '/purchases', icon: ShoppingCart, label: 'Purchases' },
     { path: '/sales', icon: TrendingUp, label: 'Sales' },
-    { path: '/suppliers-and-customers', icon: Users, label: 'Suppliers & Customers' }, 
+    { path: '/suppliers-and-customers', icon: Users, label: 'Suppliers' }, 
+    { path: '/ledger', icon: BookOpenCheck, label: 'Ledger' }, 
+
   ];
 
   useEffect(() => {

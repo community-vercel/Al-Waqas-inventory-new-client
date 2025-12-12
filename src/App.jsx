@@ -12,7 +12,7 @@ import Purchases from './components/Purchases';
 import Sales from './components/Sales';
 import  DashboardStats  from './components/DashboardStats';
 import SuppliersAndCustomers from './components/SuppliersAndCustomers';
-
+import LedgerManagement from './components/Ledger/LedgerManagement';
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -80,7 +80,7 @@ function AppContent() {
                     <Route path="/purchases" element={<Purchases />} />
                     <Route path="/sales" element={<Sales />} />
                     <Route path="/suppliers-and-customers" element={<SuppliersAndCustomers />} />
-
+                    <Route path="/ledger" element={<LedgerManagement />} />
                   </Routes>
                 </div> 
               </div>

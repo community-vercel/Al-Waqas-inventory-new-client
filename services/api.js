@@ -175,8 +175,39 @@ export const contactsAPI = {
 };
 // Health check
 export const healthCheck = () => api.get('/health');
+// Ledger API - PAYABLE & RECEIVABLE
+// Ledger API - PAYABLE & RECEIVABLE
 export const ledgerAPI = {
-  getAll: (filters = {}) => api.get('/ledgers', { params: filters }),
-  get: (id) => api.get(`/ledgers/${id}`),
-}
+  // Add new transaction (payable or receivable)
+  addTransaction: (transactionData) => api.post('/ledgers/transaction', transactionData),
+  
+  // Get daily ledger (all vendors for a date)
+  getDailyLedger: (date) => {
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+    return api.get('/ledgers/daily', { params: { date: formattedDate } });
+  },
+  
+  // Get vendor ledger (all transactions for a vendor)
+  getVendorLedger: (vendor, startDate = null, endDate = null) => {
+    const params = {};
+    if (startDate) params.startDate = new Date(startDate).toISOString().split('T')[0];
+    if (endDate) params.endDate = new Date(endDate).toISOString().split('T')[0];
+    return api.get(`/ledgers/vendor/${vendor}`, { params });
+  },
+  
+  // Get day end summary (opening and closing balance for all vendors)
+  getDayEndSummary: (date) => {
+    const formattedDate = new Date(date).toISOString().split('T')[0];
+    return api.get('/ledgers/summary/day-end', { params: { date: formattedDate } });
+  },
+  
+  // Get all vendors
+  getAllVendors: () => api.get('/ledgers/vendors'),
+  
+  // Update transaction status
+  updateTransaction: (id, status) => api.put(`/ledgers/transaction/${id}`, { status }),
+  
+  // Delete transaction
+  deleteTransaction: (id) => api.delete(`/ledgers/transaction/${id}`),
+};
 export default api;
