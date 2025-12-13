@@ -1,4 +1,4 @@
-// components/Sales.jsx - FULLY FIXED PAGINATION WITH 10 ITEMS PER PAGE
+// components/Sales.jsx - WITH DECIMAL QUANTITY SUPPORT (0.5, 1.5, etc.)
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, Trash2, Printer, Search, CheckCircle, 
@@ -28,7 +28,6 @@ const Sales = () => {
   const [salesSearchTerm, setSalesSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   
-  // FIXED: 10 ITEMS PER PAGE (CONSISTENT)
   const itemsPerPage = 10;
 
   const [dailySummary, setDailySummary] = useState({
@@ -67,33 +66,29 @@ const Sales = () => {
   };
 
   const fetchSalesByDate = async (date) => {
-  try {
-    setLoading(true);
-    
-    // THIS IS THE MAGIC LINE — GETS ALL SALES, NO LIMIT
-    const res = await salesAPI.getAllSalesForDate(date);
-    
-    const data = res.data.data || [];
-    
-    setSales(data);
-    setFilteredSales(data);
+    try {
+      setLoading(true);
+      const res = await salesAPI.getAllSalesForDate(date);
+      const data = res.data.data || [];
+      
+      setSales(data);
+      setFilteredSales(data);
 
-    // Summary calculation (keep your existing code)
-    const summary = {
-      totalSales: data.length,
-      totalQuantity: data.reduce((s, i) => s + i.quantity, 0),
-      totalAmount: data.reduce((s, i) => s + i.totalAmount, 0),
-      totalDiscount: data.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.discount || 0)) / 100, 0)
-    };
-    setDailySummary(summary);
-  } catch (err) {
-    setError('Failed to load sales');
-    setSales([]);
-    setFilteredSales([]);
-  } finally {
-    setLoading(false);
-  }
-};
+      const summary = {
+        totalSales: data.length,
+        totalQuantity: data.reduce((s, i) => s + i.quantity, 0),
+        totalAmount: data.reduce((s, i) => s + i.totalAmount, 0),
+        totalDiscount: data.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.discount || 0)) / 100, 0)
+      };
+      setDailySummary(summary);
+    } catch (err) {
+      setError('Failed to load sales');
+      setSales([]);
+      setFilteredSales([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -111,7 +106,7 @@ const Sales = () => {
 
   const getStock = (productId) => {
     const item = inventory.find(i => String(i.product._id || i.product) === productId);
-    return item ? item.quantity : 0;
+    return item ? parseFloat(item.quantity) : 0; // Ensure float for decimal support
   };
 
   const productsWithStock = products.filter(p => getStock(p._id) > 0);
@@ -123,7 +118,13 @@ const Sales = () => {
       discount: acc.discount + (item.quantity * item.salePrice * item.discount) / 100,
       total: acc.total + item.total
     }), { items: 0, subtotal: 0, discount: 0, total: 0 });
-    setSaleSummary(summary);
+    
+    setSaleSummary({
+      items: parseFloat(summary.items.toFixed(2)),
+      subtotal: parseFloat(summary.subtotal.toFixed(2)),
+      discount: parseFloat(summary.discount.toFixed(2)),
+      total: parseFloat(summary.total.toFixed(2))
+    });
   };
 
   const filteredProducts = productsWithStock.filter(p =>
@@ -131,7 +132,7 @@ const Sales = () => {
     (p.code && p.code.toLowerCase().includes(productSearchTerm.toLowerCase()))
   );
 
-  // SEARCH IN SALES - FIXED: Properly filters sales
+  // SEARCH IN SALES
   const searchedSales = useMemo(() => {
     if (!salesSearchTerm.trim()) return filteredSales;
     
@@ -143,7 +144,7 @@ const Sales = () => {
     );
   }, [filteredSales, salesSearchTerm]);
 
-  // PAGINATION LOGIC - FIXED: Accurate page calculation
+  // PAGINATION LOGIC
   const totalPages = Math.max(1, Math.ceil(searchedSales.length / itemsPerPage));
 
   const currentSales = useMemo(() => {
@@ -152,29 +153,19 @@ const Sales = () => {
     return searchedSales.slice(start, end);
   }, [searchedSales, currentPage, itemsPerPage]);
 
-  // DEBUG LOG - Check pagination numbers
-  useEffect(() => {
-    console.log(`Total items: ${searchedSales.length}, Items per page: ${itemsPerPage}`);
-    console.log(`Total pages: ${totalPages}, Current page: ${currentPage}`);
-    console.log(`Showing items ${(currentPage - 1) * itemsPerPage + 1} to ${Math.min(currentPage * itemsPerPage, searchedSales.length)}`);
-  }, [searchedSales, currentPage, totalPages]);
-
   // FIXED: Pagination numbers generator
   const paginationNumbers = useMemo(() => {
     const pages = [];
     const maxVisible = 5;
     
     if (totalPages <= maxVisible) {
-      // Show all pages if less than maxVisible
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
       }
     } else {
-      // Show window of pages around current page
       let start = Math.max(1, currentPage - 2);
       let end = Math.min(totalPages, start + maxVisible - 1);
       
-      // Adjust start if we're near the end
       if (end - start + 1 < maxVisible) {
         start = Math.max(1, end - maxVisible + 1);
       }
@@ -187,18 +178,14 @@ const Sales = () => {
     return pages;
   }, [currentPage, totalPages]);
 
-  // ADD PRODUCT TO CART
+  // ADD PRODUCT TO CART - UPDATED FOR DECIMAL SUPPORT
   const handleProductSelect = (product) => {
     const stock = getStock(product._id);
     if (stock <= 0) return setError(`"${product.name}" is out of stock`);
 
     const exists = saleItems.find(i => i.product === product._id);
     if (exists) {
-      if (exists.quantity < exists.maxQuantity) {
-        updateItem(saleItems.indexOf(exists), 'quantity', exists.quantity + 1);
-      } else {
-        setError(`Only ${exists.maxQuantity} in stock`);
-      }
+      setError(`"${product.name}" already in cart. Adjust quantity if needed.`);
     } else {
       const productDiscount = product.discount || 0;
       const discountedPrice = product.salePrice * (1 - productDiscount / 100);
@@ -219,18 +206,38 @@ const Sales = () => {
     setIsProductDropdownOpen(false);
   };
 
+  // UPDATED: Support decimal quantities (0.5, 1.5, etc.)
   const updateItem = (index, field, value) => {
     const updated = [...saleItems];
+    
     if (field === 'quantity') {
-      value = Math.max(1, Math.min(parseInt(value) || 1, updated[index].maxQuantity));
+      // Allow decimal values
+      const floatValue = parseFloat(value);
+      
+      // Validate: must be positive, not more than stock, minimum 0.1
+      if (isNaN(floatValue) || floatValue <= 0) {
+        value = 0.1; // Minimum quantity
+      } else if (floatValue > updated[index].maxQuantity) {
+        value = updated[index].maxQuantity;
+        setError(`Only ${updated[index].maxQuantity.toFixed(1)} in stock`);
+      } else {
+        value = floatValue;
+      }
     }
+    
     updated[index][field] = value;
     updated[index].total = updated[index].quantity * updated[index].salePrice * (1 - updated[index].discount / 100);
     setSaleItems(updated);
-    setError('');
+    
+    if (field !== 'quantity') {
+      setError('');
+    }
   };
 
-  const removeItem = (index) => setSaleItems(saleItems.filter((_, i) => i !== index));
+  const removeItem = (index) => {
+    setSaleItems(saleItems.filter((_, i) => i !== index));
+    setError('');
+  };
 
   const clearAllItems = () => {
     if (saleItems.length && window.confirm('Clear all items?')) {
@@ -240,25 +247,37 @@ const Sales = () => {
     }
   };
 
-  // RECORD SALE
+  // RECORD SALE - UPDATED FOR DECIMAL QUANTITIES
   const handleSubmit = async () => {
     if (!saleItems.length) return setError('Add items first');
 
     try {
       setSubmitting(true);
+      
+      // Validate all quantities
+      const invalidItems = saleItems.filter(item => 
+        item.quantity <= 0 || item.quantity > item.maxQuantity
+      );
+      
+      if (invalidItems.length > 0) {
+        setError(`Invalid quantity for ${invalidItems[0].name}`);
+        return;
+      }
+
       await Promise.all(saleItems.map(item =>
         salesAPI.create({
           product: item.product,
-          quantity: item.quantity,
+          quantity: parseFloat(item.quantity.toFixed(2)), // Ensure 2 decimal places
           unitPrice: item.salePrice,
           discount: item.discount,
           date: selectedDate
         })
       ));
 
-      setSuccess(`Sale recorded! ${saleItems.length} item(s)`);
+      const totalItems = saleItems.reduce((sum, item) => sum + item.quantity, 0);
+      setSuccess(`Sale recorded! ${totalItems.toFixed(1)} units sold`);
       setSaleItems([]);
-      await fetchSalesByDate(selectedDate); // This triggers useEffect → go to page 1
+      await fetchSalesByDate(selectedDate);
       await fetchInventory();
       window.dispatchEvent(new Event('inventoryShouldUpdate'));
       setTimeout(() => setSuccess(''), 4000);
@@ -274,7 +293,7 @@ const Sales = () => {
     if (!window.confirm('Delete this sale?')) return;
     try {
       await salesAPI.delete(id);
-      await fetchSalesByDate(selectedDate); // Triggers page reset
+      await fetchSalesByDate(selectedDate);
       setSuccess('Sale deleted');
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
@@ -299,7 +318,7 @@ const Sales = () => {
         i + 1,
         s.product?.name || '-',
         s.product?.code || '-',
-        s.quantity,
+        s.quantity.toFixed(1), // Show decimal quantities
         `PKR ${s.unitPrice.toLocaleString()}`,
         s.discount > 0 ? `${s.discount}%` : '-',
         `PKR ${s.totalAmount.toLocaleString()}`
@@ -389,7 +408,7 @@ const Sales = () => {
           </div>
           <div className="bg-white p-5 rounded-lg shadow-sm border">
             <p className="text-gray-600 text-xs">Items Sold</p>
-            <p className="text-xl font-bold text-blue-600">{dailySummary.totalQuantity}</p>
+            <p className="text-xl font-bold text-blue-600">{dailySummary.totalQuantity.toFixed(1)}</p>
           </div>
           <div className="bg-white p-5 rounded-lg shadow-sm border">
             <p className="text-gray-600 text-xs">Discount Given</p>
@@ -456,13 +475,14 @@ const Sales = () => {
                         <div>
                           <div className="font-medium">{p.name}</div>
                           <div className="text-xs text-gray-600">Code: {p.code || '—'}</div>
+                          <div className="text-xs text-gray-500 mt-1">Stock: {getStock(p._id).toFixed(1)}</div>
                         </div>
                         <div className="text-right">
                           <div className="font-bold text-blue-600">PKR {p.salePrice.toLocaleString()}</div>
                           {p.discount > 0 && (
                             <div className="text-xs text-green-600 font-medium">{p.discount}% off</div>
                           )}
-                          <div className="text-xs text-gray-500">Stock: {getStock(p._id)}</div>
+                          <div className="text-xs text-gray-500">per unit</div>
                         </div>
                       </div>
                     </button>
@@ -471,11 +491,11 @@ const Sales = () => {
               </div>
             )}
 
-            {/* Cart */}
+            {/* Cart with Decimal Quantity Support */}
             {saleItems.length > 0 && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="font-bold">Cart ({saleItems.length} items)</h3>
+                  <h3 className="font-bold">Cart ({saleItems.length} item{saleItems.length !== 1 ? 's' : ''})</h3>
                   <button onClick={clearAllItems} className="text-red-600 hover:text-red-700 text-sm flex items-center gap-1">
                     <Trash2 className="w-4 h-4" /> Clear All
                   </button>
@@ -487,21 +507,33 @@ const Sales = () => {
                       <div className="flex-1">
                         <div className="font-medium">{item.name}</div>
                         <div className="text-xs text-gray-600">
-                          PKR {item.salePrice.toLocaleString()}
+                          PKR {item.salePrice.toLocaleString()} per unit
                           {item.discount > 0 && ` • ${item.discount}% off`}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Max: {item.maxQuantity.toFixed(1)} in stock
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <input 
-                          type="number" 
-                          value={item.quantity} 
-                          min="1" 
-                          max={item.maxQuantity}
-                          onChange={e => updateItem(i, 'quantity', e.target.value)}
-                          className="w-16 px-2 py-1 border rounded text-center text-sm" 
-                        />
-                        <div className="font-bold text-green-600">PKR {item.total.toFixed(0)}</div>
-                        <button onClick={() => removeItem(i)} className="text-red-600">
+                        <div className="flex flex-col items-end">
+                          <input 
+                            type="number" 
+                            value={item.quantity} 
+                            min="0.1" 
+                            max={item.maxQuantity}
+                            step="0.1" // Allows 0.1 increments (0.5, 1.5, etc.)
+                            onChange={e => updateItem(i, 'quantity', e.target.value)}
+                            className="w-20 px-2 py-1 border rounded text-center text-sm" 
+                          />
+                          <div className="text-xs text-gray-500 mt-1">Qty</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-green-600">PKR {item.total.toFixed(0)}</div>
+                          <div className="text-xs text-gray-500">
+                            {item.quantity.toFixed(1)} × PKR {item.salePrice.toLocaleString()}
+                          </div>
+                        </div>
+                        <button onClick={() => removeItem(i)} className="text-red-600 hover:text-red-800">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -510,10 +542,26 @@ const Sales = () => {
                 </div>
 
                 <div className="border-t pt-4 bg-gray-50 -m-5 p-5 rounded-b-lg">
-                  <div className="flex justify-between font-bold mb-3">
+                  <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                    <div className="text-gray-600">Total Items:</div>
+                    <div className="text-right font-medium">{saleSummary.items.toFixed(1)} units</div>
+                    
+                    <div className="text-gray-600">Subtotal:</div>
+                    <div className="text-right">PKR {saleSummary.subtotal.toFixed(0)}</div>
+                    
+                    {saleSummary.discount > 0 && (
+                      <>
+                        <div className="text-gray-600">Discount:</div>
+                        <div className="text-right text-orange-600">-PKR {saleSummary.discount.toFixed(0)}</div>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="flex justify-between font-bold text-lg mb-4 pt-4 border-t">
                     <span>Grand Total</span>
                     <span className="text-green-600">PKR {saleSummary.total.toFixed(0)}</span>
                   </div>
+                  
                   <button 
                     onClick={handleSubmit} 
                     disabled={submitting}
@@ -528,7 +576,7 @@ const Sales = () => {
           </div>
         </div>
 
-        {/* Sales History Table */}
+        {/* Sales History Table - Updated to show decimal quantities */}
         <div className="bg-white rounded-lg border overflow-hidden">
           <div className="p-4 border-b bg-gray-50">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -576,7 +624,7 @@ const Sales = () => {
                           <div className="font-medium">{s.product?.name}</div>
                           <div className="text-xs text-gray-500">{s.product?.code || '—'}</div>
                         </td>
-                        <td className="px-4 py-3 text-center font-medium">{s.quantity}</td>
+                        <td className="px-4 py-3 text-center font-medium">{s.quantity.toFixed(1)}</td>
                         <td className="px-4 py-3 text-right text-blue-600 font-medium">PKR {s.unitPrice.toLocaleString()}</td>
                         <td className="px-4 py-3 text-center">
                           {s.discount > 0 ? <span className="text-orange-600 font-medium">{s.discount}%</span> : '—'}
@@ -593,7 +641,7 @@ const Sales = () => {
                 </table>
               </div>
 
-              {/* FIXED PAGINATION */}
+              {/* PAGINATION */}
               {totalPages > 1 && (
                 <div className="border-t px-6 py-4 bg-gray-50">
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-700">
