@@ -1,9 +1,9 @@
-// components/Sales.jsx - FULLY FIXED PAGINATION WITH 10 ITEMS PER PAGE
-import React, { useState, useEffect, useMemo } from 'react';
+// components/Sales.jsx - UPDATED WITH FREE-TEXT QUANTITY INPUT
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Printer, Search, CheckCircle, 
   AlertCircle, Loader2, ChevronLeft, ChevronRight, 
-  FileText, Calendar, X, Clock
+  FileText, Calendar, X, Clock, Circle
 } from 'lucide-react';
 import { salesAPI, productsAPI, inventoryAPI } from './../../services/api';
 import jsPDF from 'jspdf';
@@ -28,7 +28,7 @@ const Sales = () => {
   const [salesSearchTerm, setSalesSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   
-  // FIXED: 10 ITEMS PER PAGE (CONSISTENT)
+  // 10 ITEMS PER PAGE
   const itemsPerPage = 10;
 
   const [dailySummary, setDailySummary] = useState({
@@ -38,6 +38,22 @@ const Sales = () => {
   const [saleSummary, setSaleSummary] = useState({
     items: 0, subtotal: 0, discount: 0, total: 0
   });
+
+  // Track live editing of quantities
+  const [editingQuantities, setEditingQuantities] = useState({});
+
+  const dropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsProductDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // FETCH DATA ON MOUNT
   useEffect(() => { fetchInitialData(); }, []);
@@ -67,33 +83,30 @@ const Sales = () => {
   };
 
   const fetchSalesByDate = async (date) => {
-  try {
-    setLoading(true);
-    
-    // THIS IS THE MAGIC LINE — GETS ALL SALES, NO LIMIT
-    const res = await salesAPI.getAllSalesForDate(date);
-    
-    const data = res.data.data || [];
-    
-    setSales(data);
-    setFilteredSales(data);
+    try {
+      setLoading(true);
+      const res = await salesAPI.getAllSalesForDate(date);
+      const data = res.data.data || [];
+      
+      setSales(data);
+      setFilteredSales(data);
 
-    // Summary calculation (keep your existing code)
-    const summary = {
-      totalSales: data.length,
-      totalQuantity: data.reduce((s, i) => s + i.quantity, 0),
-      totalAmount: data.reduce((s, i) => s + i.totalAmount, 0),
-      totalDiscount: data.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.discount || 0)) / 100, 0)
-    };
-    setDailySummary(summary);
-  } catch (err) {
-    setError('Failed to load sales');
-    setSales([]);
-    setFilteredSales([]);
-  } finally {
-    setLoading(false);
-  }
-};
+      // Summary calculation with proper rounding
+      const summary = {
+        totalSales: data.length,
+        totalQuantity: data.reduce((s, i) => s + i.quantity, 0),
+        totalAmount: data.reduce((s, i) => s + i.totalAmount, 0),
+        totalDiscount: data.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.discount || 0)) / 100, 0)
+      };
+      setDailySummary(summary);
+    } catch (err) {
+      setError('Failed to load sales');
+      setSales([]);
+      setFilteredSales([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -109,29 +122,65 @@ const Sales = () => {
     } catch (err) { console.error(err); }
   };
 
-  const getStock = (productId) => {
-    const item = inventory.find(i => String(i.product._id || i.product) === productId);
-    return item ? item.quantity : 0;
+  const getStock = (productId, colorId = null) => {
+    const items = inventory.filter(i => 
+      String(i.product._id || i.product) === productId
+    );
+    
+    if (colorId) {
+      const specificItem = items.find(i => 
+        i.color && String(i.color._id || i.color) === colorId
+      );
+      return specificItem ? specificItem.quantity : 0;
+    }
+    
+    // Return total stock across all colors
+    return items.reduce((total, item) => total + item.quantity, 0);
   };
 
-  const productsWithStock = products.filter(p => getStock(p._id) > 0);
+  // Get all colors available for a product
+  const getProductColors = (productId) => {
+    return inventory.filter(i => 
+      String(i.product._id || i.product) === productId && i.color
+    ).map(i => i.color);
+  };
+
+  const productsWithStock = products.filter(p => getStock(p._id) >= 0.5);
+
+  // Function to snap to nearest 0.5
+  const snapToHalf = (value) => Math.round(value * 2) / 2;
 
   const calculateSaleSummary = () => {
-    const summary = saleItems.reduce((acc, item) => ({
-      items: acc.items + item.quantity,
-      subtotal: acc.subtotal + (item.quantity * item.salePrice),
-      discount: acc.discount + (item.quantity * item.salePrice * item.discount) / 100,
-      total: acc.total + item.total
-    }), { items: 0, subtotal: 0, discount: 0, total: 0 });
+    const summary = saleItems.reduce((acc, item) => {
+      const lineSubtotal = item.quantity * item.salePrice;
+      const lineDiscount = lineSubtotal * (item.discount / 100);
+      const lineTotal = lineSubtotal - lineDiscount;
+
+      return {
+        items: acc.items + item.quantity,
+        subtotal: acc.subtotal + lineSubtotal,
+        discount: acc.discount + lineDiscount,
+        total: acc.total + lineTotal,
+      };
+    }, { items: 0, subtotal: 0, discount: 0, total: 0 });
+
+    // Round to whole rupees
+    summary.subtotal = Math.round(summary.subtotal);
+    summary.discount = Math.round(summary.discount);
+    summary.total = Math.round(summary.total);
+    
     setSaleSummary(summary);
   };
 
-  const filteredProducts = productsWithStock.filter(p =>
-    p.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
-    (p.code && p.code.toLowerCase().includes(productSearchTerm.toLowerCase()))
-  );
+  const filteredProducts = useMemo(() => {
+    return productsWithStock.filter(p =>
+      p.name.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
+      (p.code && p.code.toLowerCase().includes(productSearchTerm.toLowerCase())) ||
+      (p.color && p.color.toLowerCase().includes(productSearchTerm.toLowerCase()))
+    );
+  }, [productsWithStock, productSearchTerm]);
 
-  // SEARCH IN SALES - FIXED: Properly filters sales
+  // SEARCH IN SALES
   const searchedSales = useMemo(() => {
     if (!salesSearchTerm.trim()) return filteredSales;
     
@@ -139,11 +188,12 @@ const Sales = () => {
     return filteredSales.filter(sale =>
       (sale.product?.name || '').toLowerCase().includes(searchLower) ||
       (sale.product?.code || '').toLowerCase().includes(searchLower) ||
+      (sale.color?.name || '').toLowerCase().includes(searchLower) ||
       (sale._id || '').toLowerCase().includes(searchLower)
     );
   }, [filteredSales, salesSearchTerm]);
 
-  // PAGINATION LOGIC - FIXED: Accurate page calculation
+  // PAGINATION LOGIC
   const totalPages = Math.max(1, Math.ceil(searchedSales.length / itemsPerPage));
 
   const currentSales = useMemo(() => {
@@ -152,29 +202,19 @@ const Sales = () => {
     return searchedSales.slice(start, end);
   }, [searchedSales, currentPage, itemsPerPage]);
 
-  // DEBUG LOG - Check pagination numbers
-  useEffect(() => {
-    console.log(`Total items: ${searchedSales.length}, Items per page: ${itemsPerPage}`);
-    console.log(`Total pages: ${totalPages}, Current page: ${currentPage}`);
-    console.log(`Showing items ${(currentPage - 1) * itemsPerPage + 1} to ${Math.min(currentPage * itemsPerPage, searchedSales.length)}`);
-  }, [searchedSales, currentPage, totalPages]);
-
-  // FIXED: Pagination numbers generator
+  // Pagination numbers generator
   const paginationNumbers = useMemo(() => {
     const pages = [];
     const maxVisible = 5;
     
     if (totalPages <= maxVisible) {
-      // Show all pages if less than maxVisible
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
       }
     } else {
-      // Show window of pages around current page
       let start = Math.max(1, currentPage - 2);
       let end = Math.min(totalPages, start + maxVisible - 1);
       
-      // Adjust start if we're near the end
       if (end - start + 1 < maxVisible) {
         start = Math.max(1, end - maxVisible + 1);
       }
@@ -187,18 +227,30 @@ const Sales = () => {
     return pages;
   }, [currentPage, totalPages]);
 
-  // ADD PRODUCT TO CART
-  const handleProductSelect = (product) => {
-    const stock = getStock(product._id);
-    if (stock <= 0) return setError(`"${product.name}" is out of stock`);
+  // ADD PRODUCT TO CART WITH COLOR SUPPORT
+  const handleProductSelect = (product, selectedColor = null) => {
+    const stock = getStock(product._id, selectedColor?._id);
+    
+    if (stock < 0.5) {
+      setError(`"${product.name}" has insufficient stock`);
+      return;
+    }
 
-    const exists = saleItems.find(i => i.product === product._id);
-    if (exists) {
-      if (exists.quantity < exists.maxQuantity) {
-        updateItem(saleItems.indexOf(exists), 'quantity', exists.quantity + 1);
-      } else {
-        setError(`Only ${exists.maxQuantity} in stock`);
+    const existsIndex = saleItems.findIndex(i => 
+      i.product === product._id && 
+      (!selectedColor || i.colorId === selectedColor._id)
+    );
+
+    if (existsIndex !== -1) {
+      let newQty = snapToHalf(saleItems[existsIndex].quantity + 0.5);
+      if (newQty > stock) {
+        setError(`Only ${stock} in stock`);
+        return;
       }
+
+      const updated = [...saleItems];
+      updated[existsIndex].quantity = newQty;
+      setSaleItems(updated);
     } else {
       const productDiscount = product.discount || 0;
       const discountedPrice = product.salePrice * (1 - productDiscount / 100);
@@ -209,9 +261,11 @@ const Sales = () => {
         code: product.code || '',
         salePrice: product.salePrice,
         discount: productDiscount,
-        quantity: 1,
+        quantity: 0.5,
         maxQuantity: stock,
-        total: discountedPrice
+        total: discountedPrice * 0.5,
+        colorId: selectedColor?._id || null,
+        color: selectedColor || null
       }]);
     }
 
@@ -219,46 +273,86 @@ const Sales = () => {
     setIsProductDropdownOpen(false);
   };
 
-  const updateItem = (index, field, value) => {
-    const updated = [...saleItems];
-    if (field === 'quantity') {
-      value = Math.max(1, Math.min(parseInt(value) || 1, updated[index].maxQuantity));
-    }
-    updated[index][field] = value;
-    updated[index].total = updated[index].quantity * updated[index].salePrice * (1 - updated[index].discount / 100);
-    setSaleItems(updated);
-    setError('');
+  // Live typing in quantity field
+  const updateQuantityInput = (index, text) => {
+    setEditingQuantities(prev => ({ ...prev, [index]: text }));
   };
 
-  const removeItem = (index) => setSaleItems(saleItems.filter((_, i) => i !== index));
+  // Finalize quantity when user finishes editing
+  const commitQuantity = (index) => {
+    let input = (editingQuantities[index] || '').trim();
+    let value = parseFloat(input);
+
+    // If empty or invalid, default to 0.5
+    if (isNaN(value) || input === '' || value < 0.5) {
+      value = 0.5;
+    }
+
+    // Snap to nearest 0.5
+    value = snapToHalf(value);
+
+    // Don't exceed stock
+    const stock = saleItems[index].maxQuantity || getStock(saleItems[index].product);
+    if (value > stock) {
+      setError(`Maximum available: ${stock}`);
+      value = stock;
+    }
+
+    // Update item
+    const updated = [...saleItems];
+    updated[index].quantity = value;
+    updated[index].total = value * updated[index].salePrice * (1 - updated[index].discount / 100);
+    setSaleItems(updated);
+
+    // Clear live editing state
+    setEditingQuantities(prev => {
+      const newState = { ...prev };
+      delete newState[index];
+      return newState;
+    });
+  };
+
+  const removeItem = (index) => {
+    setSaleItems(saleItems.filter((_, i) => i !== index));
+    setEditingQuantities(prev => {
+      const newState = { ...prev };
+      delete newState[index];
+      return newState;
+    });
+  };
 
   const clearAllItems = () => {
     if (saleItems.length && window.confirm('Clear all items?')) {
       setSaleItems([]);
+      setEditingQuantities({});
       setSuccess('Cart cleared');
       setTimeout(() => setSuccess(''), 2000);
     }
   };
 
-  // RECORD SALE
+  // RECORD SALE WITH COLOR SUPPORT
   const handleSubmit = async () => {
     if (!saleItems.length) return setError('Add items first');
 
     try {
       setSubmitting(true);
+      const formattedDate = selectedDate;
+      
       await Promise.all(saleItems.map(item =>
         salesAPI.create({
           product: item.product,
           quantity: item.quantity,
           unitPrice: item.salePrice,
           discount: item.discount,
-          date: selectedDate
+          color: item.colorId, // Send color ID if exists
+          date: formattedDate
         })
       ));
 
       setSuccess(`Sale recorded! ${saleItems.length} item(s)`);
       setSaleItems([]);
-      await fetchSalesByDate(selectedDate); // This triggers useEffect → go to page 1
+      setEditingQuantities({});
+      await fetchSalesByDate(selectedDate);
       await fetchInventory();
       window.dispatchEvent(new Event('inventoryShouldUpdate'));
       setTimeout(() => setSuccess(''), 4000);
@@ -274,7 +368,7 @@ const Sales = () => {
     if (!window.confirm('Delete this sale?')) return;
     try {
       await salesAPI.delete(id);
-      await fetchSalesByDate(selectedDate); // Triggers page reset
+      await fetchSalesByDate(selectedDate);
       setSuccess('Sale deleted');
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
@@ -282,7 +376,7 @@ const Sales = () => {
     }
   };
 
-  // PRINT DAILY REPORT
+  // PRINT DAILY REPORT WITH COLOR INFORMATION
   const printDailyInvoice = async () => {
     if (printing || !filteredSales.length) return;
     setPrinting(true);
@@ -299,6 +393,7 @@ const Sales = () => {
         i + 1,
         s.product?.name || '-',
         s.product?.code || '-',
+        s.color?.name || '-',
         s.quantity,
         `PKR ${s.unitPrice.toLocaleString()}`,
         s.discount > 0 ? `${s.discount}%` : '-',
@@ -306,7 +401,7 @@ const Sales = () => {
       ]);
 
       autoTable(doc, {
-        head: [['#', 'Product', 'Code', 'Qty', 'Price', 'Disc', 'Total']],
+        head: [['#', 'Product', 'Code', 'Color', 'Qty', 'Price', 'Disc', 'Total']],
         body: tableData,
         startY: 45,
         theme: 'grid',
@@ -389,7 +484,7 @@ const Sales = () => {
           </div>
           <div className="bg-white p-5 rounded-lg shadow-sm border">
             <p className="text-gray-600 text-xs">Items Sold</p>
-            <p className="text-xl font-bold text-blue-600">{dailySummary.totalQuantity}</p>
+            <p className="text-xl font-bold text-blue-600">{dailySummary.totalQuantity.toFixed(1)}</p>
           </div>
           <div className="bg-white p-5 rounded-lg shadow-sm border">
             <p className="text-gray-600 text-xs">Discount Given</p>
@@ -428,13 +523,16 @@ const Sales = () => {
           </div>
 
           <div className="p-5 space-y-5">
-            <div className="relative max-w-xl">
+            <div className="relative max-w-xl" ref={dropdownRef}>
               <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
               <input
                 type="text" 
-                placeholder="Search product by name or code..."
+                placeholder="Search product by name, code, or color..."
                 value={productSearchTerm}
-                onChange={e => { setProductSearchTerm(e.target.value); setIsProductDropdownOpen(true); }}
+                onChange={e => { 
+                  setProductSearchTerm(e.target.value); 
+                  setIsProductDropdownOpen(true); 
+                }}
                 onFocus={() => setIsProductDropdownOpen(true)}
                 className="w-full pl-10 pr-4 py-3 border rounded-lg focus:border-blue-500 outline-none text-sm"
               />
@@ -442,31 +540,88 @@ const Sales = () => {
 
             {/* Product Dropdown */}
             {isProductDropdownOpen && productSearchTerm && (
-              <div className="max-w-xl bg-white border rounded-lg shadow-lg max-h-64 overflow-y-auto z-50">
+              <div className="max-w-xl bg-white border rounded-lg shadow-lg max-h-96 overflow-y-auto z-50" ref={dropdownRef}>
                 {filteredProducts.length === 0 ? (
                   <div className="p-6 text-center text-gray-500 text-sm">No products found</div>
                 ) : (
-                  filteredProducts.map(p => (
-                    <button 
-                      key={p._id} 
-                      onClick={() => handleProductSelect(p)}
-                      className="w-full text-left p-4 hover:bg-gray-50 border-b text-sm"
-                    >
-                      <div className="flex justify-between">
-                        <div>
-                          <div className="font-medium">{p.name}</div>
-                          <div className="text-xs text-gray-600">Code: {p.code || '—'}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold text-blue-600">PKR {p.salePrice.toLocaleString()}</div>
-                          {p.discount > 0 && (
-                            <div className="text-xs text-green-600 font-medium">{p.discount}% off</div>
-                          )}
-                          <div className="text-xs text-gray-500">Stock: {getStock(p._id)}</div>
-                        </div>
+                  filteredProducts.map(p => {
+                    const productColors = getProductColors(p._id);
+                    const hasMultipleColors = productColors.length > 0;
+                    
+                    return (
+                      <div key={p._id} className="border-b">
+                        <button 
+                          onClick={() => handleProductSelect(p)}
+                          className="w-full text-left p-4 hover:bg-gray-50 text-sm"
+                        >
+                          <div className="flex justify-between">
+                            <div>
+                              <div className="font-medium">{p.name}</div>
+                              <div className="text-xs text-gray-600">Code: {p.code || '—'}</div>
+                              <div className="text-xs text-gray-600">Type: {p.type || '—'}</div>
+                              <div className="text-xs text-gray-600">Discount: {p.discount || 0}%</div>
+                              
+                              {hasMultipleColors && (
+                                <div className="mt-2">
+                                  <div className="text-xs text-gray-500 mb-1">Available Colors:</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {productColors.map(color => (
+                                      <span 
+                                        key={color._id}
+                                        className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs"
+                                        title={color.name}
+                                      >
+                                        <Circle 
+                                          className="w-3 h-3" 
+                                          fill={color.hexCode || '#ccc'}
+                                          stroke="none" 
+                                        />
+                                        {color.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-blue-600">PKR {p.salePrice.toLocaleString()}</div>
+                              {p.discount > 0 && (
+                                <div className="text-xs text-green-600 font-medium">{p.discount}% off</div>
+                              )}
+                              <div className="text-xs text-gray-500">Stock: {getStock(p._id)}</div>
+                            </div>
+                          </div>
+                        </button>
+                        
+                        {/* Color selection buttons for products with colors */}
+                        {hasMultipleColors && (
+                          <div className="px-4 pb-3">
+                            <div className="text-xs text-gray-500 mb-2">Select specific color:</div>
+                            <div className="flex flex-wrap gap-2">
+                              {productColors.map(color => (
+                                <button
+                                  key={color._id}
+                                  onClick={() => handleProductSelect(p, color)}
+                                  className="inline-flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-xs"
+                                  title={`Stock: ${getStock(p._id, color._id)}`}
+                                >
+                                  <Circle 
+                                    className="w-3 h-3" 
+                                    fill={color.hexCode || '#ccc'}
+                                    stroke="none" 
+                                  />
+                                  <span>{color.name}</span>
+                                  <span className="text-gray-500 text-xs">
+                                    ({getStock(p._id, color._id)})
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </button>
-                  ))
+                    );
+                  })
                 )}
               </div>
             )}
@@ -475,44 +630,68 @@ const Sales = () => {
             {saleItems.length > 0 && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="font-bold">Cart ({saleItems.length} items)</h3>
+                  <h3 className="font-bold">
+                    Cart ({saleItems.reduce((sum, item) => sum + item.quantity, 0).toFixed(1)} units)
+                  </h3>
                   <button onClick={clearAllItems} className="text-red-600 hover:text-red-700 text-sm flex items-center gap-1">
                     <Trash2 className="w-4 h-4" /> Clear All
                   </button>
                 </div>
 
                 <div className="space-y-3">
-                  {saleItems.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-sm">
-                      <div className="flex-1">
-                        <div className="font-medium">{item.name}</div>
-                        <div className="text-xs text-gray-600">
-                          PKR {item.salePrice.toLocaleString()}
-                          {item.discount > 0 && ` • ${item.discount}% off`}
+                  {saleItems.map((item, i) => {
+                    // Show live input or committed value
+                    const displayQty = editingQuantities[i] !== undefined 
+                      ? editingQuantities[i] 
+                      : item.quantity.toString();
+
+                    return (
+                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-sm">
+                        <div className="flex-1">
+                          <div className="font-medium">{item.name}</div>
+                          <div className="text-xs text-gray-600">
+                            PKR {item.salePrice.toLocaleString()}
+                            {item.discount > 0 && ` • ${item.discount}% off`}
+                            {item.color && (
+                              <span className="ml-2 inline-flex items-center gap-1">
+                                <Circle 
+                                  className="w-3 h-3" 
+                                  fill={item.color.hexCode || '#ccc'}
+                                  stroke="none" 
+                                />
+                                {item.color.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="text" 
+                            value={displayQty}
+                            onChange={e => updateQuantityInput(i, e.target.value)}
+                            onBlur={() => commitQuantity(i)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.target.blur();
+                              }
+                            }}
+                            className="w-20 px-2 py-1 border rounded text-center text-sm" 
+                            selectTextOnFocus={true}
+                          />
+                          <div className="font-bold text-green-600">PKR {Math.round(item.total).toLocaleString()}</div>
+                          <button onClick={() => removeItem(i)} className="text-red-600">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <input 
-                          type="number" 
-                          value={item.quantity} 
-                          min="1" 
-                          max={item.maxQuantity}
-                          onChange={e => updateItem(i, 'quantity', e.target.value)}
-                          className="w-16 px-2 py-1 border rounded text-center text-sm" 
-                        />
-                        <div className="font-bold text-green-600">PKR {item.total.toFixed(0)}</div>
-                        <button onClick={() => removeItem(i)} className="text-red-600">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="border-t pt-4 bg-gray-50 -m-5 p-5 rounded-b-lg">
                   <div className="flex justify-between font-bold mb-3">
                     <span>Grand Total</span>
-                    <span className="text-green-600">PKR {saleSummary.total.toFixed(0)}</span>
+                    <span className="text-green-600">PKR {saleSummary.total.toLocaleString()}</span>
                   </div>
                   <button 
                     onClick={handleSubmit} 
@@ -537,7 +716,7 @@ const Sales = () => {
                 <Search className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
                 <input
                   type="text"
-                  placeholder="Search sales..."
+                  placeholder="Search sales by product, code, or color..."
                   value={salesSearchTerm}
                   onChange={e => setSalesSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm focus:border-blue-500 outline-none"
@@ -559,6 +738,7 @@ const Sales = () => {
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Time</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Product</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Color</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Qty</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase">Price</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Disc</th>
@@ -575,6 +755,20 @@ const Sales = () => {
                         <td className="px-4 py-3">
                           <div className="font-medium">{s.product?.name}</div>
                           <div className="text-xs text-gray-500">{s.product?.code || '—'}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {s.color ? (
+                            <div className="flex items-center gap-2">
+                              <Circle 
+                                className="w-3 h-3" 
+                                fill={s.color.hexCode || '#ccc'}
+                                stroke="none" 
+                              />
+                              <span className="text-xs">{s.color.name || s.color.codeName || '—'}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-center font-medium">{s.quantity}</td>
                         <td className="px-4 py-3 text-right text-blue-600 font-medium">PKR {s.unitPrice.toLocaleString()}</td>
@@ -593,7 +787,7 @@ const Sales = () => {
                 </table>
               </div>
 
-              {/* FIXED PAGINATION */}
+              {/* PAGINATION */}
               {totalPages > 1 && (
                 <div className="border-t px-6 py-4 bg-gray-50">
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-700">
